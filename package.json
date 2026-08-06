@@ -1,0 +1,16 @@
+{
+  "name": "github-2fa-manager",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "GitHub 账号保险库：批量导入账号凭据、实时 2FA TOTP 码、PAT 令牌管理",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "cd webui && npm run build",
+    "start": "node server/index.js",
+    "test": "cd server && npm test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
