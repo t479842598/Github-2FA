@@ -41,13 +41,17 @@ export function verifyToken(token, vault) {
   return payload
 }
 
-// Express 中间件：未登录/无效 → 401
+// Express 中间件：未登录/无效/密钥未就绪 → 401
 export function requireAuth(vault) {
   return (req, res, next) => {
     const header = req.headers.authorization || ''
     const m = header.match(/^Bearer\s+(.+)$/i)
     if (!m || !verifyToken(m[1], vault)) {
       return res.status(401).json({ detail: '未登录或会话已过期' })
+    }
+    // 服务重启后 dataKey 未派生（内存态）：要求重新登录，避免解密失败
+    if (!vault.dataKeyReady) {
+      return res.status(401).json({ detail: '登录状态已失效，请重新登录' })
     }
     next()
   }

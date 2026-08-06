@@ -95,6 +95,11 @@ export class Vault {
     return Boolean(this.data.meta.mustChangePassword)
   }
 
+  // 数据密钥是否已在内存（重启后为 null，需重新登录派生）
+  get dataKeyReady() {
+    return this.dataKey !== null
+  }
+
   // ---- 审计日志（明文，不含敏感数据；最多 2000 条） ----
   log(action, object = '', ip = '', result = 'ok', extra = '') {
     if (!this.data.auditLog) this.data.auditLog = []
