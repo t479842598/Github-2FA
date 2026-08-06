@@ -99,6 +99,7 @@ store 支持 tags（规范化 ≤5 个每项 ≤20 字符）；create/update/列
 
 **依赖**：T-006
 
-### T-008 --title <!-- lrnev-task: status=pending, created=2026-08-06T04:32:03.337Z -->
+### T-008 --title <!-- lrnev-task: status=completed, created=2026-08-06T04:32:03.337Z, updated=2026-08-06T04:37:31.864Z -->
+<!-- lrnev-task-history: [{"from":"pending","to":"in_progress","at":"2026-08-06T04:37:31.794Z"},{"from":"in_progress","to":"completed","at":"2026-08-06T04:37:31.864Z","reason":"授权记录 KV 已实现并部署"}] -->
 
 store 新增 kvRecords 加密字段（每条 {title, content}）；parser 支持记录多行导出格式往返；前端详情区授权记录区块（添加/编辑/删除/掩码显示）

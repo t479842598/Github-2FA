@@ -77,11 +77,11 @@ function DetailRow({ label, value, recoveryCodes, recoveryUsed, onToggleRecovery
   const [visible, setVisible] = useState(false)
   if (!value && value !== 0) return null
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5 border-b border-border/50 last:border-0">
-      <span className="text-xs text-muted-foreground shrink-0 w-20">{label}</span>
+    <div className="flex items-center justify-between gap-2 sm:gap-3 py-1.5 border-b border-border/50 last:border-0">
+      <span className="text-xs text-muted-foreground shrink-0 w-16 sm:w-20 truncate" title={label}>{label}</span>
       <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
         {Array.isArray(value) ? (
-          <div className="flex flex-wrap gap-1 justify-end max-h-40 overflow-y-auto custom-scrollbar">
+          <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto custom-scrollbar justify-items-end">
             {value.map((v, i) => {
               const used = recoveryUsed?.[i]
               return (
@@ -90,7 +90,7 @@ function DetailRow({ label, value, recoveryCodes, recoveryUsed, onToggleRecovery
                   onClick={onToggleRecovery ? () => onToggleRecovery(i, !used) : undefined}
                   title={onToggleRecovery ? (used ? '点击恢复为未使用' : '点击标记为已使用') : undefined}
                   className={clsx(
-                    'font-mono text-[11px] px-1.5 py-0.5 rounded border transition-colors',
+                    'font-mono text-[11px] px-1.5 py-0.5 rounded border transition-colors max-w-full truncate',
                     used
                       ? 'bg-muted/40 text-muted-foreground/50 line-through border-border/40 cursor-pointer hover:bg-muted/70'
                       : 'bg-muted/60 text-foreground border-transparent cursor-pointer hover:bg-primary/10 hover:text-primary'
@@ -442,12 +442,12 @@ export default function AccountsPage({ showMessage }) {
             <h2 className="text-lg font-semibold">账号列表</h2>
             <p className="text-sm text-muted-foreground">实时 2FA 动态码，点击账号查看完整凭据与 GitHub 会话</p>
           </div>
-          <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center w-full sm:w-auto">
             {allTags.length > 0 && (
               <select
                 value={tagFilter}
                 onChange={(e) => setTagFilter(e.target.value)}
-                className="px-2.5 py-2 text-xs bg-secondary border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-ring"
+                className="flex-1 sm:flex-none px-2.5 py-2 text-xs bg-secondary border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-ring"
               >
                 <option value="">全部标签</option>
                 {allTags.map((t) => (
@@ -455,11 +455,11 @@ export default function AccountsPage({ showMessage }) {
                 ))}
               </select>
             )}
-            <button onClick={handleExport} className="flex items-center px-3 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-xs font-medium border border-border" title="按导入格式导出全部账号">
+            <button onClick={handleExport} className="flex items-center justify-center flex-1 sm:flex-none px-3 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-xs font-medium border border-border whitespace-nowrap" title="按导入格式导出全部账号">
               <Download className="w-3 h-3 mr-1.5" />
               导出
             </button>
-            <div className="relative flex-1 min-w-[140px]">
+            <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[140px] order-first sm:order-none">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
                 type="text"
@@ -469,13 +469,14 @@ export default function AccountsPage({ showMessage }) {
                 className="w-full pl-9 pr-3 py-1.5 text-sm bg-muted border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
               />
             </div>
-            <button onClick={refresh} className="flex items-center px-3 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-xs font-medium border border-border" title="刷新动态码">
+            <button onClick={refresh} className="flex items-center justify-center flex-1 sm:flex-none px-3 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-xs font-medium border border-border whitespace-nowrap" title="刷新动态码">
               <RefreshCw className="w-3 h-3 mr-1.5" />
               {remaining}s
             </button>
-            <button onClick={() => setEditTarget({})} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium text-sm shadow-sm">
-              <Plus className="w-4 h-4" />
-              添加账号
+            <button onClick={() => setEditTarget({})} className="flex items-center justify-center gap-1.5 flex-1 sm:flex-none px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium text-sm shadow-sm whitespace-nowrap">
+              <Plus className="w-4 h-4 shrink-0" />
+              <span className="sm:hidden">添加</span>
+              <span className="hidden sm:inline">添加账号</span>
             </button>
           </div>
         </div>
@@ -491,71 +492,137 @@ export default function AccountsPage({ showMessage }) {
             return (
               <div key={acc.id}>
                 <div
-                  className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-muted/50 transition-colors cursor-pointer"
+                  className="p-4 hover:bg-muted/50 transition-colors cursor-pointer"
                   onClick={() => toggleExpand(acc)}
                 >
-                  <div className="flex items-center gap-4 min-w-0 flex-1">
-                    <div className={clsx('w-2 h-2 rounded-full shrink-0', otp ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-muted-foreground/40')} />
-                    <div className="min-w-0 w-36 sm:w-40 shrink-0">
-                      <div className="text-sm font-medium truncate">{acc.username || '-'}</div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
-                        {(acc.tags || []).map((t) => (
-                          <span key={t} className="inline-flex items-center gap-0.5 font-mono bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded text-[10px]">
-                            <Tag className="w-2.5 h-2.5" /> {t}
-                          </span>
-                        ))}
-                        {acc.hasPat && (
-                          <span className="inline-flex items-center gap-0.5 font-mono bg-blue-500/10 text-blue-500 px-1.5 py-0.5 rounded text-[10px]">
-                            <KeyRound className="w-2.5 h-2.5" /> PAT
-                          </span>
-                        )}
-                        {!acc.hasSecret && (
-                          <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">无 2FA</span>
-                        )}
+                  {/* 移动端：行1 = 状态 + 账号名 + 操作按钮；行2 = OTP 大字 */}
+                  <div className="md:hidden">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className={clsx('w-2 h-2 rounded-full shrink-0', otp ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-muted-foreground/40')} />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">{acc.username || '-'}</div>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                            {(acc.tags || []).map((t) => (
+                              <span key={t} className="inline-flex items-center gap-0.5 font-mono bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded text-[10px]">
+                                <Tag className="w-2.5 h-2.5" /> {t}
+                              </span>
+                            ))}
+                            {acc.hasPat && (
+                              <span className="inline-flex items-center gap-0.5 font-mono bg-blue-500/10 text-blue-500 px-1.5 py-0.5 rounded text-[10px]">
+                                <KeyRound className="w-2.5 h-2.5" /> PAT
+                              </span>
+                            )}
+                            {!acc.hasSecret && (
+                              <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">无 2FA</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setEditTarget(acc)}
+                          className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
+                          title="编辑"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setConfirmDelete(acc)}
+                          className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                          title="删除"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-
-                    <div className="flex-1 flex items-center gap-3 min-w-0">
+                    <div className="mt-2.5 flex items-center gap-3">
                       {otp ? (
                         <>
-                          <span className="otp-code font-mono text-2xl font-bold tracking-widest text-foreground tabular-nums">
+                          <span className="otp-code font-mono text-3xl font-bold tracking-widest text-foreground tabular-nums">
                             {otp.code}
                           </span>
-                          <div className="hidden sm:block">
-                            <OtpBar remaining={remaining} />
-                          </div>
-                          <span className={clsx('text-[11px] font-mono tabular-nums', remaining <= 5 ? 'text-destructive' : 'text-muted-foreground')}>
+                          <OtpBar remaining={remaining} />
+                          <span className={clsx('text-xs font-mono tabular-nums', remaining <= 5 ? 'text-destructive' : 'text-muted-foreground')}>
                             {remaining}s
                           </span>
                           <button
                             onClick={(e) => copyOtp(e, acc.id, otp.code)}
-                            className="p-2 lg:p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
+                            className="p-2 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0 ml-auto"
                             title="复制动态码"
                           >
                             {copiedOtp === acc.id ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                           </button>
                         </>
                       ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
+                        <span className="text-xs text-muted-foreground">未配置 2FA</span>
                       )}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 ml-12 md:ml-0" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => setEditTarget(acc)}
-                      className="p-2 lg:p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-                      title="编辑"
-                    >
-                      <Pencil className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
-                    </button>
-                    <button
-                      onClick={() => setConfirmDelete(acc)}
-                      className="p-2 lg:p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-                      title="删除"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
-                    </button>
+                  {/* 桌面：一行布局 */}
+                  <div className="hidden md:flex md:items-center md:justify-between md:gap-4">
+                    <div className="flex items-center gap-4 min-w-0 flex-1">
+                      <div className={clsx('w-2 h-2 rounded-full shrink-0', otp ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-muted-foreground/40')} />
+                      <div className="min-w-0 w-40 shrink-0">
+                        <div className="text-sm font-medium truncate">{acc.username || '-'}</div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                          {(acc.tags || []).map((t) => (
+                            <span key={t} className="inline-flex items-center gap-0.5 font-mono bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded text-[10px]">
+                              <Tag className="w-2.5 h-2.5" /> {t}
+                            </span>
+                          ))}
+                          {acc.hasPat && (
+                            <span className="inline-flex items-center gap-0.5 font-mono bg-blue-500/10 text-blue-500 px-1.5 py-0.5 rounded text-[10px]">
+                              <KeyRound className="w-2.5 h-2.5" /> PAT
+                            </span>
+                          )}
+                          {!acc.hasSecret && (
+                            <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">无 2FA</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex-1 flex items-center gap-3 min-w-0">
+                        {otp ? (
+                          <>
+                            <span className="otp-code font-mono text-2xl font-bold tracking-widest text-foreground tabular-nums">
+                              {otp.code}
+                            </span>
+                            <OtpBar remaining={remaining} />
+                            <span className={clsx('text-[11px] font-mono tabular-nums', remaining <= 5 ? 'text-destructive' : 'text-muted-foreground')}>
+                              {remaining}s
+                            </span>
+                            <button
+                              onClick={(e) => copyOtp(e, acc.id, otp.code)}
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
+                              title="复制动态码"
+                            >
+                              {copiedOtp === acc.id ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setEditTarget(acc)}
+                        className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
+                        title="编辑"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(acc)}
+                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                        title="删除"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 

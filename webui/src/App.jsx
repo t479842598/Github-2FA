@@ -14,7 +14,10 @@ export default function App() {
       setTokenState(null)
     })
     api.status()
-      .then(() => setPhase('login'))
+      .then(() => {
+        // 有 token 直接进入主界面（刷新保持登录）；无 token 才显示登录页
+        setPhase(getToken() ? 'app' : 'login')
+      })
       .catch(() => setPhase('login'))
   }, [])
 

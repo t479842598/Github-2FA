@@ -57,7 +57,11 @@
 
 * { border-color: var(--color-border); }
 
-html { color-scheme: dark; }
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 html[data-theme="light"] { color-scheme: light; }
 
 body {
@@ -168,4 +172,47 @@ body {
 .otp-code {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.15em;
+}
+
+/* ---------------------------------------------------------------- */
+/* Mobile form controls                                              */
+/* ---------------------------------------------------------------- */
+/* iOS Safari 在 font-size < 16px 时聚焦会自动放大页面；
+   移动端统一 16px 输入字号，既防误缩放也符合可读性规范 */
+@media (max-width: 640px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* 去掉 iOS 默认表单外观，聚焦不弹原生高亮 */
+input,
+textarea,
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+}
+
+input[type="checkbox"] {
+  -webkit-appearance: checkbox;
+  appearance: checkbox;
+  border-radius: 0;
+}
+
+/* 点击高亮透明（替代系统灰色遮罩） */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 移动端触达尺寸优化 */
+@media (max-width: 640px) {
+  button.btn-sm,
+  button[class*="p-1.5"],
+  button[class*="p-2"] {
+    min-height: 36px;
+    min-width: 36px;
+  }
 }
