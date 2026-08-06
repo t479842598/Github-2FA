@@ -1,7 +1,7 @@
 ---
 spec: 04-00-account-operations
 scene: 02-github-accounts
-status: completed
+status: in-progress
 priority: P1
 created: '2026-08-06'
 updated: '2026-08-06'

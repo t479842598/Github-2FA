@@ -98,3 +98,7 @@ store 支持 tags（规范化 ≤5 个每项 ≤20 字符）；create/update/列
 - e2e 记录真实结果
 
 **依赖**：T-006
+
+### T-008 --title <!-- lrnev-task: status=pending, created=2026-08-06T04:32:03.337Z -->
+
+store 新增 kvRecords 加密字段（每条 {title, content}）；parser 支持记录多行导出格式往返；前端详情区授权记录区块（添加/编辑/删除/掩码显示）

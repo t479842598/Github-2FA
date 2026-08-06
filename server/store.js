@@ -3,13 +3,26 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { encrypt, decrypt, deriveKey, verifyPassword, hashPassword, randomHex, uuid } from './crypto.js'
 
-const SENSITIVE_FIELDS = ['email', 'password', 'setupKey', 'otpauth', 'recoveryCodes', 'pat', 'remark']
+const SENSITIVE_FIELDS = ['email', 'password', 'setupKey', 'otpauth', 'recoveryCodes', 'pat', 'remark', 'kvRecords']
 
 export const DEFAULT_PASSWORD = 'sk-admin'
 
 const EMPTY_ACCOUNT = {
   username: '', email: '', password: '', setupKey: '', otpauth: '',
-  secret: '', recoveryCodes: [], pat: '', remark: '', tags: [],
+  secret: '', recoveryCodes: [], pat: '', remark: '', tags: [], kvRecords: [],
+}
+
+// 授权记录规范化：{title, content}，≤20 条，title ≤100 字符，content ≤2000 字符
+export function normalizeKvRecords(records) {
+  if (!Array.isArray(records)) return []
+  const out = []
+  for (const r of records) {
+    if (!r || typeof r !== 'object') continue
+    const title = String(r.title || '').trim().slice(0, 100)
+    const content = String(r.content || '').trim().slice(0, 2000)
+    if (title && out.length < 20) out.push({ title, content })
+  }
+  return out
 }
 
 // 标签规范化：trim、去空、≤5 个、每项 ≤20 字符
@@ -150,6 +163,18 @@ export class Vault {
     }
   }
 
+  decKvRecords(enc) {
+    if (!enc) return []
+    const raw = this.dec(enc)
+    if (raw === '__decrypt_failed__') return []
+    try {
+      const arr = JSON.parse(raw)
+      return Array.isArray(arr) ? arr : []
+    } catch {
+      return []
+    }
+  }
+
   // ---- 账号 CRUD ----
   listAccounts() {
     return this.data.accounts.map((a) => ({
@@ -183,6 +208,7 @@ export class Vault {
       pat: this.dec(a.pat),
       remark: this.dec(a.remark),
       tags: a.tags || [],
+      kvRecords: this.decKvRecords(a.kvRecords),
       recoveryCodesUsed: this.decRecoveryUsed(a),
       hasSecret: a.hasSecret,
       hasPat: a.hasPat,
@@ -242,6 +268,7 @@ export class Vault {
       id,
       username: String(acc.username || '').trim(),
       tags: normalizeTags(acc.tags),
+      kvRecords: normalizeKvRecords(acc.kvRecords),
       createdAt: now,
       updatedAt: now,
       hasSecret: Boolean(acc.secret || acc.setupKey || acc.otpauth),
@@ -259,6 +286,9 @@ export class Vault {
     const a = this.getAccount(id)
     if (!a) return null
     const now = Date.now()
+    if ('kvRecords' in patch) {
+      patch.kvRecords = normalizeKvRecords(patch.kvRecords) // 先规范化再加密
+    }
     for (const f of SENSITIVE_FIELDS) {
       if (f in patch) {
         a[f] = this.enc(patch[f])
@@ -367,6 +397,11 @@ export class Vault {
       if (pat && pat !== '__decrypt_failed__') lines.push(`PAT: ${pat}`)
       const remark = this.dec(a.remark)
       if (remark && remark !== '__decrypt_failed__') lines.push(`备注: ${remark}`)
+      const kv = this.decKvRecords(a.kvRecords)
+      if (kv.length > 0) {
+        lines.push('记录:')
+        for (const r of kv) lines.push(`  [${r.title}] ${r.content}`)
+      }
       if (lines.length > 0) parts.push(lines.join('\n'))
     }
     return parts.join('\n\n────────\n\n')

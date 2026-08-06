@@ -17,6 +17,7 @@ const KEY_ALIASES = {
   '恢复码': 'recoveryCodes', '恢复代码': 'recoveryCodes', '备份码': 'recoveryCodes',
   'pat': 'pat', '令牌': 'pat', 'token': 'pat', 'access token': 'pat', 'apitoken': 'pat',
   '备注': 'remark', '注释': 'remark', 'note': 'remark',
+  '记录': 'kvRecords', '授权记录': 'kvRecords', '授权信息': 'kvRecords', 'kv': 'kvRecords', 'authnotes': 'kvRecords',
   // 英文
   'username': 'username', 'user': 'username', 'login': 'username', 'account': 'username',
   'email': 'email', 'mail': 'email',
@@ -34,7 +35,7 @@ const RECOVERY_CODE_RE = /^[A-Za-z0-9]{4,8}-[A-Za-z0-9]{4,8}$/
 function emptyAccount() {
   return {
     username: '', email: '', password: '', setupKey: '', otpauth: '',
-    secret: '', recoveryCodes: [], pat: '', remark: '',
+    secret: '', recoveryCodes: [], pat: '', remark: '', kvRecords: [],
   }
 }
 
@@ -68,6 +69,7 @@ export function parseAccountBlock(lines) {
   const acc = emptyAccount()
   let sawField = false
   let collectingRecovery = false
+  let collectingKv = false
 
   for (const raw of lines) {
     const line = raw.trim()
@@ -82,9 +84,16 @@ export function parseAccountBlock(lines) {
         sawField = true
         if (field === 'recoveryCodes') {
           collectingRecovery = true
+          collectingKv = false
+          continue
+        }
+        if (field === 'kvRecords') {
+          collectingKv = true
+          collectingRecovery = false
           continue
         }
         collectingRecovery = false
+        collectingKv = false
         if (field === 'username') {
           if (!acc.username) acc.username = value
         } else {
@@ -92,14 +101,21 @@ export function parseAccountBlock(lines) {
         }
         continue
       }
-      // 未知键：退出恢复码收集模式（可能是下一个字段但键不认识）
+      // 未知键：退出收集模式
       collectingRecovery = false
+      collectingKv = false
       continue
     }
 
     // 恢复码收集模式：所有行都收
     if (collectingRecovery) {
       acc.recoveryCodes.push(line)
+      continue
+    }
+    // 授权记录收集模式：[标题] 内容
+    if (collectingKv) {
+      const kv = line.match(/^\[([^\]]+)\](?:\s*(.*))?$/)
+      if (kv) acc.kvRecords.push({ title: kv[1].trim(), content: (kv[2] || '').trim() })
       continue
     }
     // 宽松：形如 xxxx-xxxx 的行直接当恢复码
@@ -135,6 +151,7 @@ const JSON_KEY_MAP = {
   setupKey: 'setupKey', setup_key: 'setupKey', setupkey: 'setupKey', secret: 'setupKey', 密钥: 'setupKey',
   otpauth: 'otpauth', otp_uri: 'otpauth',
   recoveryCodes: 'recoveryCodes', recovery_codes: 'recoveryCodes', backupCodes: 'recoveryCodes', 恢复码: 'recoveryCodes',
+  kvRecords: 'kvRecords', kv_records: 'kvRecords', records: 'kvRecords', 记录: 'kvRecords', 授权记录: 'kvRecords',
   pat: 'pat', token: 'pat', 令牌: 'pat',
   remark: 'remark', note: 'remark', 备注: 'remark',
 }
@@ -156,6 +173,8 @@ export function parseJson(input) {
       if (!field || v === undefined || v === null || v === '') continue
       if (field === 'recoveryCodes') {
         acc.recoveryCodes = Array.isArray(v) ? v.map(String) : String(v).split(/[\s,，;；]+/).filter(Boolean)
+      } else if (field === 'kvRecords') {
+        acc.kvRecords = Array.isArray(v) ? v : []
       } else {
         acc[field] = String(v)
       }
@@ -183,6 +202,16 @@ export function sanitizeAccount(acc) {
     out.recoveryCodes = out.recoveryCodes
       .map((s) => String(s).slice(0, LIMITS.recoveryCode))
       .slice(0, MAX_RECOVERY_CODES)
+  }
+  if (Array.isArray(out.kvRecords)) {
+    out.kvRecords = out.kvRecords
+      .filter((r) => r && typeof r === 'object')
+      .map((r) => ({
+        title: String(r.title || '').trim().slice(0, 100),
+        content: String(r.content || '').trim().slice(0, 2000),
+      }))
+      .filter((r) => r.title)
+      .slice(0, 20)
   }
   return out
 }

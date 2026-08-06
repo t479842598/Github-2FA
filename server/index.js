@@ -100,24 +100,24 @@ app.get('/api/accounts/:id/full', (req, res) => {
 })
 
 app.post('/api/accounts', (req, res) => {
-  const { username, email, password, setupKey, otpauth, secret, recoveryCodes, pat, remark, tags } = req.body || {}
+  const { username, email, password, setupKey, otpauth, secret, recoveryCodes, pat, remark, tags, kvRecords } = req.body || {}
   if (!username || !String(username).trim()) return fail(res, 400, '账号名不能为空')
   if (String(username).length > 100) return fail(res, 400, '账号名过长')
   const acc = vault.createAccount(sanitizeAccount({
     username, email, password, setupKey, otpauth, secret,
     recoveryCodes: Array.isArray(recoveryCodes) ? recoveryCodes : [],
-    pat, remark, tags,
+    pat, remark, tags, kvRecords,
   }))
   vault.log('account_add', acc.username, clientIp(req))
   res.json({ success: true, account: { id: acc.id, username: acc.username } })
 })
 
 app.put('/api/accounts/:id', (req, res) => {
-  const { username, email, password, setupKey, otpauth, secret, recoveryCodes, pat, remark, tags } = req.body || {}
+  const { username, email, password, setupKey, otpauth, secret, recoveryCodes, pat, remark, tags, kvRecords } = req.body || {}
   const patch = {
     username, email, password, setupKey, otpauth, secret,
     recoveryCodes: recoveryCodes !== undefined ? (Array.isArray(recoveryCodes) ? recoveryCodes : []) : undefined,
-    pat, remark, tags,
+    pat, remark, tags, kvRecords,
   }
   // 未传的字段不覆盖
   for (const k of Object.keys(patch)) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Check, Copy, Download, Eye, EyeOff, Pencil, Plus, RefreshCw, Search, Trash2, KeyRound, ShieldCheck, QrCode, Tag,
+  Check, Copy, Download, Eye, EyeOff, KeyRound, ListPlus, Pencil, Plus, RefreshCw, Search, ShieldCheck, QrCode, Tag, Trash2,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../api.js'
@@ -224,6 +224,95 @@ function EditModal({ account, onClose, onSaved }) {
   )
 }
 
+// 单条授权记录行：标题 + 掩码内容 + 操作
+function KvRow({ title, content, onEdit, onDelete }) {
+  const [visible, setVisible] = useState(false)
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="flex items-center justify-between gap-3 py-2 px-3 rounded-lg border border-border/60 bg-muted/20">
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-medium text-foreground truncate">{title}</div>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <code className={clsx('font-mono text-[11px] truncate', visible ? 'text-foreground' : 'blur-sm select-none')}>
+            {visible ? content : '••••••••••••'}
+          </code>
+          {content && (
+            <>
+              <button
+                onClick={() => setVisible(!visible)}
+                className="p-1 text-muted-foreground hover:text-primary rounded-md transition-colors shrink-0"
+                title={visible ? '隐藏' : '显示'}
+              >
+                {visible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+              </button>
+              <button
+                onClick={async () => { await navigator.clipboard.writeText(content); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+                className="p-1 text-muted-foreground hover:text-primary rounded-md transition-colors shrink-0"
+                title="复制"
+              >
+                {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <button onClick={onEdit} className="p-1.5 text-muted-foreground hover:text-primary rounded-md transition-colors" title="编辑">
+          <Pencil className="w-3 h-3" />
+        </button>
+        <button onClick={onDelete} className="p-1.5 text-muted-foreground hover:text-destructive rounded-md transition-colors" title="删除">
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// 授权记录 KV 编辑弹窗（标题 + 内容）
+function KvModal({ record, onClose, onSave }) {
+  const [title, setTitle] = useState(record?.title || '')
+  const [content, setContent] = useState(record?.content || '')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (!title.trim()) return
+    setSaving(true)
+    try {
+      await onSave({ title: title.trim(), content: content.trim() })
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-background/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="card w-full max-w-md p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">{record ? '编辑授权记录' : '添加授权记录'}</h3>
+          <button onClick={onClose} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/70">✕</button>
+        </div>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">标题（如：Telegram 绑定 / SSH 密钥 / API Key）</label>
+            <input className="input-field text-sm" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="记录标题" autoFocus />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">内容（加密存储）</label>
+            <textarea className="input-field text-sm h-28 resize-y font-mono" value={content} onChange={(e) => setContent(e.target.value)} placeholder="授权信息内容" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>取消</button>
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={saving || !title.trim()}>
+            {saving ? '保存中…' : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AccountsPage({ showMessage }) {
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -237,6 +326,7 @@ export default function AccountsPage({ showMessage }) {
   const [qrAccount, setQrAccount] = useState(null)
   const [allTags, setAllTags] = useState([])
   const [tagFilter, setTagFilter] = useState('')
+  const [kvModal, setKvModal] = useState(null) // {record} 或 {record: null} 添加
   const { otps, remaining, refresh } = useOtps()
 
   const load = useCallback(async () => {
@@ -302,6 +392,36 @@ export default function AccountsPage({ showMessage }) {
     if (tagFilter && !(a.tags || []).includes(tagFilter)) return false
     return true
   })
+
+  const refreshDetails = async (accountId) => {
+    try {
+      const full = await api.accountFull(accountId)
+      setDetails(full)
+    } catch { /* ignore */ }
+  }
+
+  const saveKv = async (record) => {
+    const cur = details?.kvRecords || []
+    const next = kvModal.record
+      ? cur.map((r, i) => (i === kvModal.index ? record : r))
+      : [...cur, record]
+    await api.updateAccount(kvModal.accountId, { kvRecords: next })
+    showMessage('success', '授权记录已保存')
+    await refreshDetails(kvModal.accountId)
+    load()
+    refresh()
+  }
+
+  const deleteKv = async (index, accountId) => {
+    if (!confirm('确定删除这条授权记录吗？')) return
+    const cur = details?.kvRecords || []
+    const next = cur.filter((_, i) => i !== index)
+    await api.updateAccount(accountId, { kvRecords: next })
+    showMessage('success', '授权记录已删除')
+    await refreshDetails(accountId)
+    load()
+    refresh()
+  }
 
   const doDelete = async () => {
     try {
@@ -481,6 +601,37 @@ export default function AccountsPage({ showMessage }) {
                             </button>
                           )}
                         </div>
+
+                        {/* 授权记录 KV */}
+                        <div className="max-w-2xl">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <KeyRound className="w-3.5 h-3.5 text-primary" />
+                              授权记录（其他绑定/密钥信息）
+                            </div>
+                            <button
+                              onClick={() => setKvModal({ record: null, accountId: acc.id })}
+                              className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                            >
+                              <ListPlus className="w-3.5 h-3.5" /> 添加记录
+                            </button>
+                          </div>
+                          {(details.kvRecords || []).length === 0 ? (
+                            <div className="text-xs text-muted-foreground/70 py-2">暂无记录，可添加 Telegram 绑定、SSH 密钥、其他平台授权等</div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {(details.kvRecords || []).map((r, i) => (
+                                <KvRow
+                                  key={i}
+                                  title={r.title}
+                                  content={r.content}
+                                  onEdit={() => setKvModal({ record: r, index: i, accountId: acc.id })}
+                                  onDelete={() => deleteKv(i, acc.id)}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -492,6 +643,14 @@ export default function AccountsPage({ showMessage }) {
       </div>
 
       {qrAccount && <OtpQrModal account={qrAccount} onClose={() => setQrAccount(null)} />}
+
+      {kvModal && (
+        <KvModal
+          record={kvModal.record}
+          onClose={() => setKvModal(null)}
+          onSave={(rec) => saveKv(rec)}
+        />
+      )}
 
       {editTarget !== null && (
         <EditModal

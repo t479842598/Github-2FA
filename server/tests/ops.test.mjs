@@ -140,3 +140,62 @@ test('导出不含解密失败字段（密钥不符时跳过）', async () => {
   assert.ok(!text.includes('visible-pass'))
   rmSync(dir, { recursive: true, force: true })
 })
+
+test('授权记录 KV：创建/更新/加密/导出往返', async () => {
+  const { vault, dir } = await readyVault()
+  const rec = vault.createAccount({
+    username: 'kv-user',
+    password: 'pass1',
+    kvRecords: [
+      { title: 'Telegram 绑定', content: '@telegram_id_xxx' },
+      { title: '备用邮箱', content: 'backup@x.com' },
+    ],
+  })
+  await vault.save()
+  // 磁盘密文不含明文
+  const raw = JSON.parse(readFileSync(vault.filePath, 'utf8'))
+  const stored = raw.accounts[0]
+  assert.ok(typeof stored.kvRecords === 'object' && stored.kvRecords.ct)
+  assert.ok(!JSON.stringify(raw).includes('telegram_id_xxx'))
+
+  // 全量视图解密
+  const full = vault.getFullAccount(rec.id)
+  assert.equal(full.kvRecords.length, 2)
+  assert.equal(full.kvRecords[0].title, 'Telegram 绑定')
+  assert.equal(full.kvRecords[0].content, '@telegram_id_xxx')
+
+  // 更新
+  vault.updateAccount(rec.id, { kvRecords: [{ title: '新记录', content: '新内容' }] })
+  assert.equal(vault.getFullAccount(rec.id).kvRecords.length, 1)
+
+  // 规范化：超长/空标题
+  vault.updateAccount(rec.id, { kvRecords: [{ title: '', content: 'x' }, { title: 'a'.repeat(150), content: 'c'.repeat(3000) }] })
+  const norm = vault.getFullAccount(rec.id).kvRecords
+  assert.equal(norm.length, 1)
+  assert.equal(norm[0].title.length, 100)
+  assert.equal(norm[0].content.length, 2000)
+
+  // 导出含记录，且可往返导入
+  vault.updateAccount(rec.id, { kvRecords: [{ title: 'API Key', content: 'sk-test-123' }] })
+  await vault.save()
+  const text = vault.exportText()
+  assert.ok(text.includes('记录:'))
+  assert.ok(text.includes('[API Key] sk-test-123'))
+  const parsed = parseImport(text)
+  const p = parsed.find((x) => x.username === 'kv-user')
+  assert.equal(p.kvRecords.length, 1)
+  assert.equal(p.kvRecords[0].title, 'API Key')
+  assert.equal(p.kvRecords[0].content, 'sk-test-123')
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('授权记录：改密码重加密覆盖', async () => {
+  const { vault, dir } = await readyVault()
+  vault.createAccount({ username: 'kv2', kvRecords: [{ title: 'SSH 密钥', content: 'ssh-rsa AAA...' }] })
+  await vault.save()
+  await vault.changePassword('sk-admin', 'new-pass-kv')
+  const full = vault.getFullAccount(vault.data.accounts[0].id)
+  assert.equal(full.kvRecords[0].title, 'SSH 密钥')
+  assert.equal(full.kvRecords[0].content, 'ssh-rsa AAA...')
+  rmSync(dir, { recursive: true, force: true })
+})
