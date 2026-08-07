@@ -99,7 +99,7 @@ app.get('/api/accounts/:id/full', (req, res) => {
   res.json(acc)
 })
 
-app.post('/api/accounts', (req, res) => {
+app.post('/api/accounts', async (req, res) => {
   const { username, email, password, setupKey, otpauth, secret, recoveryCodes, pat, remark, tags, kvRecords } = req.body || {}
   if (!username || !String(username).trim()) return fail(res, 400, '账号名不能为空')
   if (String(username).length > 100) return fail(res, 400, '账号名过长')
@@ -109,10 +109,11 @@ app.post('/api/accounts', (req, res) => {
     pat, remark, tags, kvRecords,
   }))
   vault.log('account_add', acc.username, clientIp(req))
+  await vault.save()
   res.json({ success: true, account: { id: acc.id, username: acc.username } })
 })
 
-app.put('/api/accounts/:id', (req, res) => {
+app.put('/api/accounts/:id', async (req, res) => {
   const { username, email, password, setupKey, otpauth, secret, recoveryCodes, pat, remark, tags, kvRecords } = req.body || {}
   const patch = {
     username, email, password, setupKey, otpauth, secret,
@@ -126,6 +127,7 @@ app.put('/api/accounts/:id', (req, res) => {
   const acc = vault.updateAccount(req.params.id, patch)
   if (!acc) return fail(res, 404, '账号不存在')
   vault.log('account_update', acc.username, clientIp(req))
+  await vault.save()
   res.json({ success: true })
 })
 
