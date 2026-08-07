@@ -95,6 +95,49 @@ test('账号 CRUD + 字段加密存储', async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+test('导入去重：账号已存在 / 内容重复', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('pw123456')
+  vault.setDataKey('pw123456')
+
+  vault.createAccount({
+    username: 'alice',
+    email: 'alice@x.com',
+    password: 'pass-a',
+    setupKey: 'AAAA1111',
+    otpauth: 'otpauth://totp/GitHub:alice?secret=AAAA1111&issuer=GitHub',
+  })
+  vault.createAccount({ username: 'bob', password: 'shared-pass' })
+
+  // ① 用户名已存在（大小写不敏感，内容不同也算）→ 账号已存在
+  assert.equal(vault.findImportDuplicate({ username: 'ALICE', password: 'changed-pass' }).reason, '账号已存在')
+  // ② 内容全等（密码 + setup key + otpauth）→ 内容重复（用户名不同也算）
+  const d = vault.findImportDuplicate({
+    username: 'newuser',
+    password: 'pass-a',
+    setupKey: 'AAAA1111',
+    otpauth: 'otpauth://totp/GitHub:alice?secret=AAAA1111&issuer=GitHub',
+  })
+  assert.ok(d && d.reason === '内容与已有账号重复')
+  // ③ 内容部分不同 → 不重复
+  assert.equal(vault.findImportDuplicate({
+    username: 'newuser',
+    password: 'pass-b',
+    setupKey: 'AAAA1111',
+    otpauth: 'otpauth://totp/GitHub:alice?secret=AAAA1111&issuer=GitHub',
+  }), null)
+  // ④ 无凭据的新用户名 → 不重复（避免空凭据误判）
+  assert.equal(vault.findImportDuplicate({ username: 'carol' }), null)
+  // ⑤ 无任何字段 / 空对象 → 不重复
+  assert.equal(vault.findImportDuplicate({}), null)
+  // ⑥ 邮箱不参与身份去重（与旧 findByUsername 行为一致）
+  assert.equal(vault.findImportDuplicate({ username: 'alice@x.com' }), null)
+  // ⑦ 同名但内容不一致的账号在导入循环中仍按身份跳过（不会产生重复用户名）
+  assert.equal(vault.findImportDuplicate({ username: 'bob', password: 'other-pass' }).reason, '账号已存在')
+  rmSync(dir, { recursive: true, force: true })
+})
+
 test('修改密码后旧密钥失效、数据可读', async () => {
   const { vault, dir } = makeVault()
   await vault.load()

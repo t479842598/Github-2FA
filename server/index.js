@@ -308,6 +308,7 @@ app.post('/api/import', async (req, res) => {
     hasSecret: Boolean(a.secret),
     recoveryCount: a.recoveryCodes.length,
     hasPat: Boolean(a.pat),
+    dup: Boolean(vault.findImportDuplicate(a)),
   }))
 
   if (dry) return res.json({ preview, count: preview.length })
@@ -321,9 +322,9 @@ app.post('/api/import', async (req, res) => {
       errors.push({ username: acc.username || '(未命名)', reason: '缺少账号/邮箱' })
       continue
     }
-    const dup = vault.findByUsername(acc.username || acc.email)
+    const dup = vault.findImportDuplicate(acc)
     if (dup) {
-      skipped.push({ username: acc.username || acc.email, reason: '已存在' })
+      skipped.push({ username: acc.username || acc.email, reason: dup.reason })
       continue
     }
     vault.createAccount(acc)

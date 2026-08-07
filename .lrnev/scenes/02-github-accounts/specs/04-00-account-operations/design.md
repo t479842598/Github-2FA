@@ -77,6 +77,14 @@ created: '2026-08-06'
 - 列表接口返回 tags；`GET /api/tags` 返回全部标签（去重）
 - 前端：编辑弹窗标签输入（逗号分隔）、列表行标签徽章、账号页顶部标签筛选下拉
 
+#### D-08 导入去重
+- `store.findImportDuplicate({username, email, password, setupKey, otpauth})`：返回 `{reason, account}` 或 null
+  - ① 身份重复：导入项用户名（或邮箱兜底）与库内某账号用户名不区分大小写相同 → `reason: '账号已存在'`
+  - ② 内容重复：导入项至少含一个凭据字段，且密码、setup key、otpauth 三者与库内某账号完全一致（空值视为空串）→ `reason: '内容与已有账号重复'`
+  - ② 仅凭据字段非空时启用，避免「空凭据新账号」误判重复
+- 导入循环以 `findImportDuplicate` 取代 `findByUsername`；跳过项带具体 reason
+- 解析预览（dry=1）逐条返回 `dup: boolean`，前端预览表「去重」列展示 新增/重复 徽章
+
 ### 数据模型（扩展）
 
 ```json

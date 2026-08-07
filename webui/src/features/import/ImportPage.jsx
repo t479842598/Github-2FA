@@ -134,7 +134,7 @@ export default function ImportPage({ showMessage }) {
           </div>
           {result.skipped.length > 0 && (
             <div className="text-xs text-muted-foreground">
-              跳过：{result.skipped.map((s) => s.username).join('、')}
+              跳过：{result.skipped.map((s) => `${s.username}${s.reason ? `（${s.reason}）` : ''}`).join('、')}
             </div>
           )}
           {result.errors.length > 0 && (
@@ -150,7 +150,12 @@ export default function ImportPage({ showMessage }) {
           <div className="p-5 border-b border-border flex items-center justify-between">
             <div>
               <h3 className="text-base font-semibold">解析预览</h3>
-              <p className="text-sm text-muted-foreground">识别到 {preview.length} 个账号，确认无误后点击「一键导入」</p>
+              <p className="text-sm text-muted-foreground">
+                识别到 {preview.length} 个账号，确认无误后点击「一键导入」
+                {preview.filter((p) => p.dup).length > 0 && (
+                  <span className="ml-1.5 text-amber-500">（其中 {preview.filter((p) => p.dup).length} 个与已有账号重复，将自动跳过）</span>
+                )}
+              </p>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
               <Upload className="w-3 h-3" />
@@ -167,6 +172,7 @@ export default function ImportPage({ showMessage }) {
                   <th className="px-5 py-2.5 font-semibold text-center">2FA 密钥</th>
                   <th className="px-5 py-2.5 font-semibold text-center">恢复码</th>
                   <th className="px-5 py-2.5 font-semibold text-center">PAT</th>
+                  <th className="px-5 py-2.5 font-semibold text-center">去重</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
@@ -193,6 +199,15 @@ export default function ImportPage({ showMessage }) {
                       {p.hasPat
                         ? <span className="inline-block w-2 h-2 rounded-full bg-blue-500" title="已识别" />
                         : <span className="inline-block w-2 h-2 rounded-full bg-muted-foreground/30" title="缺失" />}
+                    </td>
+                    <td className="px-5 py-2.5 text-center">
+                      {p.dup
+                        ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20" title="与已有账号重复，导入时将跳过">
+                            重复
+                          </span>
+                        : <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                            新增
+                          </span>}
                     </td>
                   </tr>
                 ))}

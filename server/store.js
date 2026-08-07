@@ -5,6 +5,11 @@ import { encrypt, decrypt, deriveKey, verifyPassword, hashPassword, randomHex, u
 
 const SENSITIVE_FIELDS = ['email', 'password', 'setupKey', 'otpauth', 'recoveryCodes', 'pat', 'remark', 'kvRecords']
 
+// 明文全等比较（空值视为空串，用于导入去重内容比对）
+function plainEq(a, b) {
+  return String(a || '').trim() === String(b || '').trim()
+}
+
 export const DEFAULT_PASSWORD = 'sk-admin'
 
 const EMPTY_ACCOUNT = {
@@ -318,8 +323,28 @@ export class Vault {
     return true
   }
 
-  findByUsername(username) {
-    return this.data.accounts.find((a) => a.username.toLowerCase() === String(username).toLowerCase()) || null
+  // 导入去重：返回命中已存账号的重复项 { reason, account }，否则 null
+  // 规则：① 账号（用户名）已存在 → 重复；② 密码、setup key、otpauth 与已存账号完全一致 → 重复（账号不同也算）
+  // 说明：② 仅当导入项至少含一个凭据字段时启用，避免「空凭据新账号」被误判重复
+  findImportDuplicate({ username, email, password, setupKey, otpauth }) {
+    const entryKey = String(username || email || '').trim().toLowerCase()
+    if (entryKey) {
+      for (const a of this.data.accounts) {
+        if (String(a.username || '').trim().toLowerCase() === entryKey) {
+          return { reason: '账号已存在', account: a }
+        }
+      }
+    }
+    if (password || setupKey || otpauth) {
+      for (const a of this.data.accounts) {
+        if (plainEq(this.dec(a.password), password) &&
+            plainEq(this.dec(a.setupKey), setupKey) &&
+            plainEq(this.dec(a.otpauth), otpauth)) {
+          return { reason: '内容与已有账号重复', account: a }
+        }
+      }
+    }
+    return null
   }
 
   // ---- GitHub 会话（可选加密字段，旧数据兼容） ----

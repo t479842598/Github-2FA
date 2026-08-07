@@ -103,3 +103,15 @@ store 支持 tags（规范化 ≤5 个每项 ≤20 字符）；create/update/列
 <!-- lrnev-task-history: [{"from":"pending","to":"in_progress","at":"2026-08-06T04:37:31.794Z"},{"from":"in_progress","to":"completed","at":"2026-08-06T04:37:31.864Z","reason":"授权记录 KV 已实现并部署"}] -->
 
 store 新增 kvRecords 加密字段（每条 {title, content}）；parser 支持记录多行导出格式往返；前端详情区授权记录区块（添加/编辑/删除/掩码显示）
+
+### T-009 导入去重（账号已存在 / 内容重复自动跳过） <!-- lrnev-task: status=completed, created=2026-08-07T09:20:00.000Z, updated=2026-08-07T09:25:00.000Z, validates=F-08|D-08 -->
+<!-- lrnev-task-history: [{"from":"pending","to":"in_progress","at":"2026-08-07T09:20:00.000Z"},{"from":"in_progress","to":"completed","at":"2026-08-07T09:25:00.000Z"}] -->
+
+store 新增 findImportDuplicate：① 用户名已存在 → '账号已存在'；② 密码+setup key+otpauth 与库内账号完全一致（导入项至少含一个凭据字段）→ '内容与已有账号重复'。index.js 导入循环改用它（跳过项带具体 reason），dry 预览逐条返回 dup 标记；ImportPage 预览表加「去重」列（新增/重复徽章）+ 结果区显示跳过原因；store.test.mjs 新增去重单测。
+
+**验收**：
+- 重复导入同批账号全部跳过，不产生重复记录
+- 同凭据不同用户名按内容重复跳过；全新账号正常导入
+- 预览标注重复条目；结果展示跳过原因
+
+注：MCP 工作区被解析到 pi-web-QT，本任务通过直接编辑本地 .lrnev 文件落账（未走 task_create 工具）。
