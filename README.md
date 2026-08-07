@@ -2,7 +2,7 @@
 
 > **团队 GitHub 账号集中管理平台** —— 统一托管团队所有 GitHub 账号的凭据、2FA 动态码、登录会话与访问令牌，一人一套密码，全员安全协作。
 
-![version](https://img.shields.io/badge/version-1.0.0-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![node](https://img.shields.io/badge/node-%3E%3D22-339933)
+![version](https://img.shields.io/badge/version-1.0.1-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![node](https://img.shields.io/badge/node-%3E%3D22-339933)
 
 GitHub 2FA Manager 面向**需要批量管理多个 GitHub 账号的团队/个人**：将账号密码、2FA 密钥、恢复码、PAT 令牌集中加密保管，网页端实时查看 2FA 动态码，自动登录 GitHub 获取会话、一键生成 PAT，并内置审计日志与健康检查，让账号资产"看得见、管得住、查得清"。
 
