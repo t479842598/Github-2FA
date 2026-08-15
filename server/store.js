@@ -194,6 +194,8 @@ export class Vault {
       hasPat: a.hasPat,
       hasEmail: a.hasEmail,
       tags: a.tags || [],
+      banned: a.banned || 'unknown',
+      bannedCheckedAt: a.bannedCheckedAt || null,
       createdAt: a.createdAt,
       updatedAt: a.updatedAt,
     }))
@@ -279,6 +281,8 @@ export class Vault {
       username: String(acc.username || '').trim(),
       tags: normalizeTags(acc.tags),
       kvRecords: normalizeKvRecords(acc.kvRecords),
+      banned: 'unknown',
+      bannedCheckedAt: null,
       createdAt: now,
       updatedAt: now,
       hasSecret: Boolean(acc.secret || acc.setupKey || acc.otpauth),
@@ -371,6 +375,16 @@ export class Vault {
     const a = this.getAccount(id)
     if (!a) return false
     a.ghSession = null
+    a.updatedAt = Date.now()
+    return true
+  }
+
+  // ---- 封号状态（明文，非敏感） ----
+  setBannedStatus(id, banned, checkedAt = Date.now()) {
+    const a = this.getAccount(id)
+    if (!a) return false
+    a.banned = banned === 'banned' ? 'banned' : banned === 'normal' ? 'normal' : 'unknown'
+    a.bannedCheckedAt = checkedAt
     a.updatedAt = Date.now()
     return true
   }

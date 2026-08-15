@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Check, Copy, Download, Eye, EyeOff, KeyRound, ListPlus, Pencil, Plus, RefreshCw, Search, ShieldCheck, QrCode, Tag, Trash2,
+  Check, Copy, Download, Eye, EyeOff, KeyRound, ListPlus, Pencil, Plus, RefreshCw, Search, ShieldCheck, ShieldAlert, QrCode, Tag, Trash2,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../api.js'
@@ -59,6 +59,25 @@ function CopyButton({ text, label = '复制', className }) {
       {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
   )
+}
+
+// 封号状态徽章：被封=红、正常=绿、未知=灰
+function BannedBadge({ banned }) {
+  if (banned === 'banned') {
+    return (
+      <span className="inline-flex items-center gap-0.5 font-mono bg-destructive/10 text-destructive px-1.5 py-0.5 rounded text-[10px]" title="账号疑似被封（资料页不可访问或 API 返回封禁）">
+        <ShieldAlert className="w-2.5 h-2.5" /> 被封
+      </span>
+    )
+  }
+  if (banned === 'normal') {
+    return (
+      <span className="inline-flex items-center gap-0.5 font-mono bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded text-[10px]" title="账号正常">
+        <ShieldCheck className="w-2.5 h-2.5" /> 正常
+      </span>
+    )
+  }
+  return null
 }
 
 function OtpBar({ remaining }) {
@@ -326,6 +345,8 @@ export default function AccountsPage({ showMessage }) {
   const [qrAccount, setQrAccount] = useState(null)
   const [allTags, setAllTags] = useState([])
   const [tagFilter, setTagFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('') // '' | normal | banned
+  const [bannedChecking, setBannedChecking] = useState(false)
   const [kvModal, setKvModal] = useState(null) // {record} 或 {record: null} 添加
   const { otps, remaining, refresh } = useOtps()
 
@@ -341,6 +362,35 @@ export default function AccountsPage({ showMessage }) {
   }, [showMessage])
 
   useEffect(() => { load() }, [load])
+
+  // 默认检测封号状态（服务端 24h 缓存，每天一次）；完成后刷新列表状态
+  useEffect(() => {
+    let disposed = false
+    const run = async () => {
+      setBannedChecking(true)
+      try {
+        await api.bannedCheck(false)
+        if (!disposed) load()
+      } catch { /* 网络失败静默，保留旧状态 */ } finally {
+        if (!disposed) setBannedChecking(false)
+      }
+    }
+    run()
+    return () => { disposed = true }
+  }, [load])
+
+  const forceBannedCheck = async () => {
+    setBannedChecking(true)
+    try {
+      const d = await api.bannedCheck(true)
+      await load()
+      showMessage('success', `封号检测完成：${d.checked}/${d.total} 个账号已重新检测`)
+    } catch (e) {
+      showMessage('error', `封号检测失败：${e.message}`)
+    } finally {
+      setBannedChecking(false)
+    }
+  }
 
   useEffect(() => {
     api.tags().then(({ tags }) => setAllTags(tags)).catch(() => {})
@@ -387,11 +437,19 @@ export default function AccountsPage({ showMessage }) {
     setTimeout(() => setCopiedOtp(null), 1500)
   }
 
-  const filtered = accounts.filter((a) => {
-    if (search && !a.username.toLowerCase().includes(search.toLowerCase())) return false
-    if (tagFilter && !(a.tags || []).includes(tagFilter)) return false
-    return true
-  })
+  const filtered = accounts
+    .filter((a) => {
+      if (search && !a.username.toLowerCase().includes(search.toLowerCase())) return false
+      if (tagFilter && !(a.tags || []).includes(tagFilter)) return false
+      if (statusFilter && a.banned !== statusFilter) return false
+      return true
+    })
+    // 封号排最后：normal/unknown 在前（保持原序），banned 在末尾
+    .sort((a, b) => {
+      const ab = a.banned === 'banned' ? 1 : 0
+      const bb = b.banned === 'banned' ? 1 : 0
+      return ab - bb
+    })
 
   const refreshDetails = async (accountId) => {
     try {
@@ -455,6 +513,25 @@ export default function AccountsPage({ showMessage }) {
                 ))}
               </select>
             )}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="flex-1 sm:flex-none px-2.5 py-2 text-xs bg-secondary border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-ring"
+              title="按封号状态筛选"
+            >
+              <option value="">全部状态</option>
+              <option value="normal">正常</option>
+              <option value="banned">被封</option>
+            </select>
+            <button
+              onClick={forceBannedCheck}
+              disabled={bannedChecking || accounts.length === 0}
+              className="flex items-center justify-center flex-1 sm:flex-none px-3 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-xs font-medium border border-border whitespace-nowrap"
+              title="强制重新检测全部账号封号状态（默认每天自动检测一次）"
+            >
+              <ShieldAlert className="w-3 h-3 mr-1.5" />
+              {bannedChecking ? '检测中…' : '检测封号'}
+            </button>
             <button onClick={handleExport} className="flex items-center justify-center flex-1 sm:flex-none px-3 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-xs font-medium border border-border whitespace-nowrap" title="按导入格式导出全部账号">
               <Download className="w-3 h-3 mr-1.5" />
               导出
@@ -503,6 +580,7 @@ export default function AccountsPage({ showMessage }) {
                         <div className="min-w-0">
                           <div className="text-sm font-medium truncate">{acc.username || '-'}</div>
                           <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                            <BannedBadge banned={acc.banned} />
                             {(acc.tags || []).map((t) => (
                               <span key={t} className="inline-flex items-center gap-0.5 font-mono bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded text-[10px]">
                                 <Tag className="w-2.5 h-2.5" /> {t}
@@ -567,6 +645,7 @@ export default function AccountsPage({ showMessage }) {
                       <div className="min-w-0 w-40 shrink-0">
                         <div className="text-sm font-medium truncate">{acc.username || '-'}</div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                          <BannedBadge banned={acc.banned} />
                           {(acc.tags || []).map((t) => (
                             <span key={t} className="inline-flex items-center gap-0.5 font-mono bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded text-[10px]">
                               <Tag className="w-2.5 h-2.5" /> {t}

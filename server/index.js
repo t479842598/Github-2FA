@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { Vault } from './store.js'
 import { issueToken, requireAuth } from './auth.js'
 import { totp, totpRemaining } from './totp.js'
-import { parseImport, sanitizeAccount } from './parser.js'
+import { parseImport, sanitizeAccount, parseKeyList } from './parser.js'
 import {
-  loginToGithub, createPat, logoutFromGithub, checkSession, checkPat, listPats, revokePat,
+  loginToGithub, createPat, logoutFromGithub, checkSession, checkPat, listPats, revokePat, checkBanned,
   CookieJar, GhError,
 } from './github.js'
 import QRCode from 'qrcode'
@@ -82,6 +82,7 @@ app.use('/api/change-password', auth)
 app.use('/api/backup', auth)
 // 默认密码未改时：禁止导入、添加/编辑/删除账号、GitHub 登录/PAT（只读列表与改密放行）
 app.post('/api/import', requirePasswordChanged)
+app.post('/api/import/keys', requirePasswordChanged)
 app.post('/api/accounts', requirePasswordChanged)
 app.put('/api/accounts/:id', requirePasswordChanged)
 app.delete('/api/accounts/:id', requirePasswordChanged)
@@ -337,6 +338,73 @@ app.post('/api/import', async (req, res) => {
   res.json({ imported, skipped, errors })
 })
 
+// opencode / freebuff 密钥导入：每行「账号-key」，保存到对应账号授权记录
+// body: { text, name: 'opencode'|'freebuff', dry?: 1 }
+// 规则：账号不存在→提示；已有同名记录且密钥相同→跳过；密钥不同→新增一条 title 加日期标注
+app.post('/api/import/keys', async (req, res) => {
+  const { text, name, dry } = req.body || {}
+  const recordName = name === 'freebuff' ? 'freebuff' : 'opencode'
+  if (!text || !String(text).trim()) return fail(res, 400, '导入内容为空')
+
+  const pairs = parseKeyList(String(text))
+  if (pairs.length === 0) return fail(res, 400, '未识别到任何「账号-密钥」对，请检查格式（每行：账号-密钥）')
+
+  const findAccount = (username) => {
+    const lower = String(username).trim().toLowerCase()
+    return vault.data.accounts.find((a) => a.username.trim().toLowerCase() === lower) || null
+  }
+
+  // dry 预览：不改数据，返回每行判定结果
+  if (dry) {
+    const preview = pairs.map((p) => {
+      const acc = findAccount(p.username)
+      if (!acc) return { username: p.username, key: p.key, status: 'not_found' }
+      const records = vault.getFullAccount(acc.id).kvRecords || []
+      const same = records.find((r) => r.title === recordName && r.content === p.key)
+      if (same) return { username: p.username, key: p.key, status: 'duplicate' }
+      const existing = records.find((r) => r.title === recordName)
+      return { username: p.username, key: p.key, status: existing ? 'update' : 'new' }
+    })
+    return res.json({ preview, count: pairs.length, name: recordName })
+  }
+
+  const imported = []
+  const skipped = []
+  const notFound = []
+  for (const p of pairs) {
+    const acc = findAccount(p.username)
+    if (!acc) {
+      notFound.push(p.username)
+      continue
+    }
+    const full = vault.getFullAccount(acc.id)
+    const records = full.kvRecords || []
+    const same = records.find((r) => r.title === recordName && r.content === p.key)
+    if (same) {
+      skipped.push({ username: p.username, reason: '密钥已存在' })
+      continue
+    }
+    const existing = records.find((r) => r.title === recordName)
+    let title = recordName
+    if (existing) {
+      // 已有同名记录但密钥不同 → 日期标注
+      const d = new Date()
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      title = `${recordName} ${dateStr}`
+    }
+    const next = [...records, { title, content: p.key }]
+    if (next.length > 20) {
+      skipped.push({ username: p.username, reason: '授权记录已达 20 条上限' })
+      continue
+    }
+    vault.updateAccount(acc.id, { kvRecords: next })
+    imported.push({ username: p.username, title })
+  }
+  await vault.save()
+  vault.log('key_import', recordName, clientIp(req), 'ok', `${imported.length} imported / ${skipped.length} dup / ${notFound.length} notfound`)
+  res.json({ imported, skipped, notFound, name: recordName })
+})
+
 // 修改密码
 app.post('/api/change-password', async (req, res) => {
   const ip = clientIp(req)
@@ -455,6 +523,39 @@ app.post('/api/accounts/health', async (req, res) => {
   vault.log('health_check', '', clientIp(req), 'ok', `${results.length} accounts`)
   await vault.save()
   res.json({ results })
+})
+
+// ---- 封号检测（批量）：默认每天一次（24h 缓存），force 强制全量 ----
+const BANNED_CACHE_MS = 24 * 60 * 60 * 1000
+
+app.post('/api/accounts/banned-check', async (req, res) => {
+  const { force } = req.body || {}
+  const accounts = vault.data.accounts
+  const now = Date.now()
+  const results = []
+  let checkedCount = 0
+  for (let i = 0; i < accounts.length; i++) {
+    const a = accounts[i]
+    const cached = !force && a.bannedCheckedAt && now - a.bannedCheckedAt < BANNED_CACHE_MS
+    if (cached) {
+      results.push({ id: a.id, username: a.username, banned: a.banned || 'unknown', cached: true })
+      continue
+    }
+    const full = vault.getFullAccount(a.id)
+    const session = vault.getGhSession(a.id)
+    const r = await checkBanned({
+      username: a.username,
+      pat: full?.pat || null,
+      jar: session ? CookieJar.fromJSON(session.cookies) : null,
+    })
+    vault.setBannedStatus(a.id, r.banned)
+    checkedCount += 1
+    results.push({ id: a.id, username: a.username, banned: r.banned, via: r.via, cached: false })
+    if (i < accounts.length - 1) await new Promise((r) => setTimeout(r, 600)) // GitHub 限流保护
+  }
+  await vault.save()
+  vault.log('banned_check', '', clientIp(req), 'ok', `${checkedCount} checked / ${accounts.length} accounts`)
+  res.json({ results, checked: checkedCount, total: accounts.length })
 })
 
 // ---- GitHub 会话检测（单账号） ----

@@ -1,6 +1,6 @@
 import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { CookieJar, extractFormToken, extractRequiredFields, extractPat, extractScopes, loginToGithub, createPat, checkSession, checkPat, listPats, revokePat, GhError } from '../github.js'
+import { CookieJar, extractFormToken, extractRequiredFields, extractPat, extractScopes, loginToGithub, createPat, checkSession, checkPat, listPats, revokePat, checkBanned, GhError } from '../github.js'
 
 // ---------- CookieJar ----------
 test('CookieJar 解析 Set-Cookie', () => {
@@ -346,4 +346,125 @@ test('revokePat：表单提交', async () => {
   const jar = CookieJar.fromJSON([{ name: 'user_session', value: 'u1', domain: 'github.com', path: '/' }])
   const r = await revokePat(jar, '12345')
   assert.equal(r, true)
+})
+
+// ---------- 封号检测 ----------
+function mockApiFetch(routes) {
+  mock.method(globalThis, 'fetch', async (url, opts = {}) => {
+    const u = new URL(url)
+    const key = u.origin + u.pathname
+    const route = routes[key]
+    if (!route) throw new Error(`unmocked: ${key}`)
+    const res = await route(opts)
+    return {
+      status: res.status,
+      headers: { getSetCookie: () => res.cookies || [], get: (n) => (n === 'location' ? (res.location || null) : null) },
+      text: async () => (res.text ? await res.text() : res.body || ''),
+      json: async () => (res.json ? res.json() : {}),
+    }
+  })
+}
+
+test('checkBanned：PAT 200 → 正常', async () => {
+  mockApiFetch({
+    'https://api.github.com/user': async (opts) => {
+      assert.equal(opts.headers['Authorization'], 'Bearer good-token')
+      return { status: 200, text: async () => '{}' }
+    },
+  })
+  const r = await checkBanned({ username: 'u1', pat: 'good-token' })
+  assert.equal(r.banned, 'normal')
+  assert.equal(r.via, 'pat')
+})
+
+test('checkBanned：PAT 403 含 suspended → 被封', async () => {
+  mockApiFetch({
+    'https://api.github.com/user': async () => ({ status: 403, text: async () => '{"message": "Your account has been suspended. Please contact support."}' }),
+  })
+  const r = await checkBanned({ username: 'u1', pat: 'bad' })
+  assert.equal(r.banned, 'banned')
+  assert.equal(r.via, 'pat')
+})
+
+test('checkBanned：PAT 401（无效 PAT）→ 降级到公开页 404 → 被封', async () => {
+  mock.method(globalThis, 'fetch', async (url, opts = {}) => {
+    const u = new URL(url)
+    if (u.origin + u.pathname === 'https://api.github.com/user') {
+      return { status: 401, text: async () => '{}' }
+    }
+    if (u.origin + u.pathname === 'https://github.com/ghost-user') {
+      return { status: 404, text: async () => 'not found' }
+    }
+    throw new Error(`unmocked: ${url}`)
+  })
+  const r = await checkBanned({ username: 'ghost-user', pat: 'invalid' })
+  assert.equal(r.banned, 'banned')
+  assert.equal(r.via, 'profile')
+})
+
+test('checkBanned：无凭据，公开页 200 → 正常', async () => {
+  mockApiFetch({
+    'https://github.com/alive-user': async () => ({ status: 200, text: async () => '<html>profile</html>' }),
+  })
+  const r = await checkBanned({ username: 'alive-user' })
+  assert.equal(r.banned, 'normal')
+  assert.equal(r.via, 'profile')
+})
+
+test('checkBanned：公开页 301 重定向（改名）→ 正常', async () => {
+  mockApiFetch({
+    'https://github.com/renamed-old': async () => ({ status: 301, location: 'https://github.com/renamed-new', text: async () => '' }),
+  })
+  const r = await checkBanned({ username: 'renamed-old' })
+  assert.equal(r.banned, 'normal')
+  assert.equal(r.via, 'profile')
+})
+
+test('checkBanned：会话有效且主页含 suspended → 被封', async () => {
+  mockApiFetch({
+    'https://github.com/': async () => ({ status: 200, text: async () => '<html>Your account has been suspended.</html>' }),
+  })
+  const jar = CookieJar.fromJSON([{ name: 'user_session', value: 'u1', domain: 'github.com', path: '/' }])
+  const r = await checkBanned({ username: 'suspended-user', jar })
+  assert.equal(r.banned, 'banned')
+  assert.equal(r.via, 'session')
+})
+
+test('checkBanned：会话有效且主页正常 → 正常', async () => {
+  mockApiFetch({
+    'https://github.com/': async () => ({ status: 200, text: async () => '<html>dashboard</html>' }),
+  })
+  const jar = CookieJar.fromJSON([{ name: 'user_session', value: 'u1', domain: 'github.com', path: '/' }])
+  const r = await checkBanned({ username: 'ok-user', jar })
+  assert.equal(r.banned, 'normal')
+  assert.equal(r.via, 'session')
+})
+
+test('checkBanned：会话失效 → 降级公开页 404 → 被封', async () => {
+  mock.method(globalThis, 'fetch', async (url) => {
+    const u = new URL(url)
+    if (u.origin + u.pathname === 'https://github.com/') {
+      return { status: 200, text: async () => '<html>Sign in to GitHub <form action="/session"></html>' }
+    }
+    if (u.origin + u.pathname === 'https://github.com/expired-user') {
+      return { status: 404, text: async () => 'nf' }
+    }
+    throw new Error(`unmocked: ${url}`)
+  })
+  const jar = CookieJar.fromJSON([{ name: 'user_session', value: 'expired', domain: 'github.com', path: '/' }])
+  const r = await checkBanned({ username: 'expired-user', jar })
+  assert.equal(r.banned, 'banned')
+  assert.equal(r.via, 'profile')
+})
+
+test('checkBanned：网络异常 → unknown', async () => {
+  mock.method(globalThis, 'fetch', async () => { throw new TypeError('fetch failed') })
+  const r = await checkBanned({ username: 'net-user' })
+  assert.equal(r.banned, 'unknown')
+})
+
+test('checkBanned：无任何凭据且无用户名 → unknown', async () => {
+  const r = await checkBanned({})
+  assert.equal(r.banned, 'unknown')
+  assert.equal(r.via, 'none')
 })

@@ -228,3 +228,24 @@ export function parseImport(input) {
   }
   return parseText(text)
 }
+
+// ---- opencode / freebuff 密钥列表解析 ----
+// 每行一个「账号-key」：取第一个 '-' 之前为账号，之后（含 '-'）为密钥。
+// 示例：
+//   opencode: SiND2Fvct4w4-sk-FtB58T2AmVG4XE285L8FY0qXn0uO4iUZG3nIFuDBv6VSWJkKS4YVGRIrLKJuiQ04
+//   freebuff: SiND2Fvct4w4-f54b73eb-6ff2-4f7a-b3ce-0660a70d2c66
+// 空行/无 '-' 行跳过。返回 [{ username, key }]
+export function parseKeyList(text) {
+  const lines = String(text).split(/\r?\n/)
+  const out = []
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+    const idx = line.indexOf('-')
+    if (idx <= 0) continue // 无 '-' 或账号为空
+    const username = line.slice(0, idx).trim()
+    const key = line.slice(idx + 1).trim()
+    if (username && key) out.push({ username, key })
+  }
+  return out
+}

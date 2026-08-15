@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseImport, parseText, parseAccountBlock, splitBlocks } from '../parser.js'
+import { parseImport, parseText, parseAccountBlock, splitBlocks, parseKeyList } from '../parser.js'
 
 const fixture = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'sample-accounts.txt'), 'utf8')
 
@@ -81,4 +81,28 @@ test('中文冒号兼容', () => {
   assert.equal(acc.username, 'c1')
   assert.equal(acc.password, 'cpass')
   assert.deepEqual(acc.recoveryCodes, ['aaaa-1111'])
+})
+
+test('parseKeyList：opencode 格式（第一个 - 前是账号）', () => {
+  const text = `SiND2Fvct4w4-sk-FtB58T2AmVG4XE285L8FY0qXn0uO4iUZG3nIFuDBv6VSWJkKS4YVGRIrLKJuiQ04
+SiND2Fvct4w4-f54b73eb-6ff2-4f7a-b3ce-0660a70d2c66`
+  const pairs = parseKeyList(text)
+  assert.equal(pairs.length, 2)
+  assert.equal(pairs[0].username, 'SiND2Fvct4w4')
+  assert.equal(pairs[0].key, 'sk-FtB58T2AmVG4XE285L8FY0qXn0uO4iUZG3nIFuDBv6VSWJkKS4YVGRIrLKJuiQ04')
+  assert.equal(pairs[1].username, 'SiND2Fvct4w4')
+  assert.equal(pairs[1].key, 'f54b73eb-6ff2-4f7a-b3ce-0660a70d2c66')
+})
+
+test('parseKeyList：空行/无 - 行跳过，key 保留 - 部分', () => {
+  const pairs = parseKeyList('u1-sk-abc-123\n\nnodashline\n  \nu2-sk-xyz')
+  assert.equal(pairs.length, 2)
+  assert.equal(pairs[0].key, 'sk-abc-123')
+  assert.equal(pairs[1].key, 'sk-xyz')
+})
+
+test('parseKeyList：无有效对返回空数组', () => {
+  assert.deepEqual(parseKeyList(''), [])
+  assert.deepEqual(parseKeyList('随便一行文字'), [])
+  assert.deepEqual(parseKeyList('-sk-alone'), [])
 })

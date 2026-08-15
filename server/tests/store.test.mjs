@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Vault } from '../store.js'
@@ -135,6 +135,45 @@ test('导入去重：账号已存在 / 内容重复', async () => {
   assert.equal(vault.findImportDuplicate({ username: 'alice@x.com' }), null)
   // ⑦ 同名但内容不一致的账号在导入循环中仍按身份跳过（不会产生重复用户名）
   assert.equal(vault.findImportDuplicate({ username: 'bob', password: 'other-pass' }).reason, '账号已存在')
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('封号状态：默认 unknown，setBannedStatus 持久化，旧数据兼容', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('pw123456')
+  vault.setDataKey('pw123456')
+  const rec = vault.createAccount({ username: 'ban-user' })
+  // 新账号默认 unknown
+  assert.equal(vault.listAccounts()[0].banned, 'unknown')
+  assert.equal(vault.listAccounts()[0].bannedCheckedAt, null)
+
+  // 设置被封并持久化
+  vault.setBannedStatus(rec.id, 'banned')
+  await vault.save()
+  const reloaded = new Vault(vault.filePath)
+  await reloaded.load()
+  reloaded.setDataKey('pw123456')
+  assert.equal(reloaded.listAccounts()[0].banned, 'banned')
+  assert.ok(reloaded.listAccounts()[0].bannedCheckedAt)
+
+  // 设为正常
+  vault.setBannedStatus(rec.id, 'normal')
+  assert.equal(vault.listAccounts()[0].banned, 'normal')
+  // 非法值归一为 unknown
+  vault.setBannedStatus(rec.id, 'garbage')
+  assert.equal(vault.listAccounts()[0].banned, 'unknown')
+
+  // 旧数据（无 banned 字段）兼容
+  const raw = JSON.parse(readFileSync(vault.filePath, 'utf8'))
+  delete raw.accounts[0].banned
+  delete raw.accounts[0].bannedCheckedAt
+  writeFileSync(vault.filePath, JSON.stringify(raw))
+  const v2 = new Vault(vault.filePath)
+  await v2.load()
+  v2.setDataKey('pw123456')
+  assert.equal(v2.listAccounts()[0].banned, 'unknown')
+  assert.equal(v2.listAccounts()[0].bannedCheckedAt, null)
   rmSync(dir, { recursive: true, force: true })
 })
 

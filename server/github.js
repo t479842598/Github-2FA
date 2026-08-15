@@ -346,6 +346,74 @@ export async function checkPat(pat) {
   }
 }
 
+// ---------- 封号检测 ----------
+// 探测账号是否被 GitHub 封禁/暂停。信号优先级：
+//   ① PAT → api.github.com/user（200=正常，403 含 suspend/blocked=被封）
+//   ② 已存会话 → 主页文本含 suspended 横幅=被封
+//   ③ 兜底 → 公开资料页 github.com/{username}（200=正常，404=被封/删除）
+// 返回 { banned: 'normal'|'banned'|'unknown', via: 'pat'|'session'|'profile'|'none' }
+export async function checkBanned({ username, pat, jar } = {}) {
+  // ① PAT 信号
+  if (pat) {
+    try {
+      const res = await fetch('https://api.github.com/user', {
+        headers: {
+          'User-Agent': BROWSER_HEADERS['User-Agent'],
+          'Accept': 'application/vnd.github+json',
+          'Authorization': `Bearer ${pat}`,
+        },
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+      if (res.status === 200) return { banned: 'normal', via: 'pat' }
+      if (res.status === 401 || res.status === 403) {
+        const text = await res.text().catch(() => '')
+        if (/suspend|banned|blocked/i.test(text)) return { banned: 'banned', via: 'pat' }
+        // PAT 无效或权限不足，无法据此判断 → 降级到会话/公开页
+      } else {
+        return { banned: 'unknown', via: 'pat' }
+      }
+    } catch (e) {
+      // 网络错误 → 降级
+    }
+  }
+
+  // ② 会话信号
+  if (jar && jar.get('user_session')) {
+    try {
+      const { text } = await ghGetText(jar, '/', { referer: `${BASE}/` })
+      if (/account has been suspended|account was suspended|has been flagged|suspended for|suspended/i.test(text)) {
+        return { banned: 'banned', via: 'session' }
+      }
+      if (/Sign in to GitHub|action="\/session"/i.test(text)) {
+        // 会话已失效，无法判定 → 降级
+      } else {
+        return { banned: 'normal', via: 'session' }
+      }
+    } catch (e) {
+      // 网络错误 → 降级
+    }
+  }
+
+  // ③ 公开资料页兜底
+  if (username) {
+    try {
+      const res = await fetch(`https://github.com/${encodeURIComponent(username)}`, {
+        headers: BROWSER_HEADERS,
+        redirect: 'manual',
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+      if (res.status === 200) return { banned: 'normal', via: 'profile' }
+      if (res.status === 404) return { banned: 'banned', via: 'profile' }
+      if (res.status === 301 || res.status === 302 || res.status === 308) return { banned: 'normal', via: 'profile' } // 重定向=账号存在（可能改名）
+      return { banned: 'unknown', via: 'profile' }
+    } catch (e) {
+      return { banned: 'unknown', via: 'profile' }
+    }
+  }
+
+  return { banned: 'unknown', via: 'none' }
+}
+
 // ---------- PAT 列表（/settings/tokens 卡片解析，GitHub 2025+ 结构） ----------
 export async function listPats(jar) {
   if (!jar || !jar.get('user_session')) {
