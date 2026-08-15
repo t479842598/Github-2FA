@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Check, Copy, Download, Eye, EyeOff, KeyRound, ListPlus, Pencil, Plus, RefreshCw, Search, ShieldCheck, ShieldAlert, QrCode, Tag, Trash2,
+  Check, Copy, Download, Eye, EyeOff, Flag, KeyRound, ListPlus, Pencil, Plus, RefreshCw, Search, ShieldCheck, ShieldAlert, QrCode, Tag, Trash2,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../api.js'
@@ -58,6 +58,54 @@ function CopyButton({ text, label = '复制', className }) {
     >
       {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
+  )
+}
+
+// 导出预览弹窗：只读 textarea 预览 + 复制 + 下载
+function ExportModal({ title, text, filename, onClose }) {
+  const [copied, setCopied] = useState(false)
+  const download = () => {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+  const copy = async () => {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-background/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="card w-full max-w-2xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold">{title}</h3>
+            <p className="text-sm text-muted-foreground">预览导出内容，可复制或下载 .txt 文件</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/70 shrink-0">✕</button>
+        </div>
+        <textarea
+          readOnly
+          value={text}
+          className="input-field w-full h-80 resize-y font-mono text-xs leading-relaxed"
+          onFocus={(e) => e.target.select()}
+        />
+        <div className="flex justify-end gap-2">
+          <button className="btn btn-secondary btn-sm" onClick={copy}>
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? '已复制' : '复制'}
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={download}>
+            <Download className="w-3.5 h-3.5" />
+            下载 .txt
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -347,6 +395,8 @@ export default function AccountsPage({ showMessage }) {
   const [tagFilter, setTagFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('') // '' | normal | banned
   const [bannedChecking, setBannedChecking] = useState(false)
+  const [exportModal, setExportModal] = useState(null) // { title, text, filename }
+  const [confirmFlaggedDelete, setConfirmFlaggedDelete] = useState(false)
   const [kvModal, setKvModal] = useState(null) // {record} 或 {record: null} 添加
   const { otps, remaining, refresh } = useOtps()
 
@@ -399,14 +449,35 @@ export default function AccountsPage({ showMessage }) {
   const handleExport = async () => {
     try {
       const { text } = await api.exportAll()
-      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `accounts-export-${new Date().toISOString().slice(0, 10)}.txt`
-      a.click()
-      URL.revokeObjectURL(url)
-      showMessage('success', `已导出 ${accounts.length} 个账号（用户导入格式）`)
+      setExportModal({
+        title: '导出全部账号',
+        text,
+        filename: `accounts-export-${new Date().toISOString().slice(0, 10)}.txt`,
+      })
+    } catch (e) {
+      showMessage('error', e.message)
+    }
+  }
+
+  const handleExportFlagged = async () => {
+    try {
+      const { text } = await api.exportFlagged()
+      setExportModal({
+        title: `导出被标记账号（${accounts.filter((a) => a.flagged).length} 个）`,
+        text,
+        filename: `flagged-accounts-export-${new Date().toISOString().slice(0, 10)}.txt`,
+      })
+    } catch (e) {
+      showMessage('error', e.message)
+    }
+  }
+
+  const handleDeleteFlagged = async () => {
+    try {
+      const d = await api.deleteFlagged()
+      setConfirmFlaggedDelete(false)
+      showMessage('success', `已删除 ${d.count} 个被标记账号`)
+      load()
     } catch (e) {
       showMessage('error', e.message)
     }
@@ -536,6 +607,18 @@ export default function AccountsPage({ showMessage }) {
               <Download className="w-3 h-3 mr-1.5" />
               导出
             </button>
+            {accounts.some((a) => a.flagged) && (
+              <>
+                <button onClick={handleExportFlagged} className="flex items-center justify-center flex-1 sm:flex-none px-3 py-2 bg-amber-500/10 text-amber-500 rounded-lg hover:bg-amber-500/20 transition-colors text-xs font-medium border border-amber-500/30 whitespace-nowrap" title="导出全部被标记账号">
+                  <Flag className="w-3 h-3 mr-1.5" />
+                  导出被标记
+                </button>
+                <button onClick={() => setConfirmFlaggedDelete(true)} className="flex items-center justify-center flex-1 sm:flex-none px-3 py-2 bg-destructive/10 text-destructive rounded-lg hover:bg-destructive/20 transition-colors text-xs font-medium border border-destructive/30 whitespace-nowrap" title="批量删除全部被标记账号">
+                  <Trash2 className="w-3 h-3 mr-1.5" />
+                  删除被标记
+                </button>
+              </>
+            )}
             <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[140px] order-first sm:order-none">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
@@ -581,6 +664,11 @@ export default function AccountsPage({ showMessage }) {
                           <div className="text-sm font-medium truncate">{acc.username || '-'}</div>
                           <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 flex-wrap">
                             <BannedBadge banned={acc.banned} />
+                            {acc.flagged && (
+                              <span className="inline-flex items-center gap-0.5 font-mono bg-purple-500/10 text-purple-500 px-1.5 py-0.5 rounded text-[10px]" title="被标记账号（固定格式导入）">
+                                <Flag className="w-2.5 h-2.5" /> 标记
+                              </span>
+                            )}
                             {(acc.tags || []).map((t) => (
                               <span key={t} className="inline-flex items-center gap-0.5 font-mono bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded text-[10px]">
                                 <Tag className="w-2.5 h-2.5" /> {t}
@@ -646,6 +734,11 @@ export default function AccountsPage({ showMessage }) {
                         <div className="text-sm font-medium truncate">{acc.username || '-'}</div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
                           <BannedBadge banned={acc.banned} />
+                          {acc.flagged && (
+                            <span className="inline-flex items-center gap-0.5 font-mono bg-purple-500/10 text-purple-500 px-1.5 py-0.5 rounded text-[10px]" title="被标记账号（固定格式导入）">
+                              <Flag className="w-2.5 h-2.5" /> 标记
+                            </span>
+                          )}
                           {(acc.tags || []).map((t) => (
                             <span key={t} className="inline-flex items-center gap-0.5 font-mono bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded text-[10px]">
                               <Tag className="w-2.5 h-2.5" /> {t}
@@ -821,6 +914,33 @@ export default function AccountsPage({ showMessage }) {
             <div className="flex justify-end gap-2">
               <button className="btn btn-secondary btn-sm" onClick={() => setConfirmDelete(null)}>取消</button>
               <button className="btn btn-danger btn-sm" onClick={doDelete}>删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {exportModal && (
+        <ExportModal
+          title={exportModal.title}
+          text={exportModal.text}
+          filename={exportModal.filename}
+          onClose={() => setExportModal(null)}
+        />
+      )}
+
+      {confirmFlaggedDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-background/70 backdrop-blur-sm" onClick={() => setConfirmFlaggedDelete(false)}>
+          <div className="card max-w-sm w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-semibold flex items-center gap-2">
+              <Trash2 className="w-4 h-4 text-destructive" />
+              批量删除被标记账号
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              将删除全部 <span className="font-mono text-foreground">{accounts.filter((a) => a.flagged).length}</span> 个被标记账号（固定格式导入）。此操作不可恢复。
+            </p>
+            <div className="flex justify-end gap-2">
+              <button className="btn btn-secondary btn-sm" onClick={() => setConfirmFlaggedDelete(false)}>取消</button>
+              <button className="btn btn-danger btn-sm" onClick={handleDeleteFlagged}>全部删除</button>
             </div>
           </div>
         </div>

@@ -64,6 +64,8 @@ export const api = {
   auditLogs: (limit = 100) => request(`/audit?limit=${limit}`),
   clearAudit: () => request('/audit', { method: 'DELETE' }),
   exportAll: () => request('/export'),
+  exportFlagged: () => request('/export?flagged=1'),
+  deleteFlagged: () => request('/accounts/flagged/delete', { method: 'POST' }),
   recoveryMark: (id, index, used) => request(`/accounts/${id}/recovery-used`, { method: 'PUT', body: JSON.stringify({ index, used }) }),
   tags: () => request('/tags'),
   healthCheck: () => request('/accounts/health', { method: 'POST' }),

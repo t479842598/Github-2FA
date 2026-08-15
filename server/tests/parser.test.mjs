@@ -106,3 +106,32 @@ test('parseKeyList：无有效对返回空数组', () => {
   assert.deepEqual(parseKeyList('随便一行文字'), [])
   assert.deepEqual(parseKeyList('-sk-alone'), [])
 })
+
+test('固定格式：账号----密码----setupkey → flagged=true', () => {
+  const acc = parseAccountBlock(['tqH8iLZ7VEV9----pVBYB9Fh4Mu8ayNEF8----KDI5GIHR6P3HECLE'])
+  assert.equal(acc.username, 'tqH8iLZ7VEV9')
+  assert.equal(acc.password, 'pVBYB9Fh4Mu8ayNEF8')
+  assert.equal(acc.setupKey, 'KDI5GIHR6P3HECLE')
+  assert.equal(acc.secret, 'KDI5GIHR6P3HECLE')
+  assert.equal(acc.flagged, true)
+})
+
+test('固定格式：普通格式不受影响，flagged=false', () => {
+  const acc = parseAccountBlock(['账号: normal-user', '密码: pass-1', 'setup key: ABCDEFGH'])
+  assert.equal(acc.username, 'normal-user')
+  assert.equal(acc.flagged, false)
+})
+
+test('固定格式：文本多行解析且保留标记', () => {
+  const accounts = parseText('tqH8iLZ7VEV9----pVBYB9Fh4Mu8ayNEF8----KDI5GIHR6P3HECLE\n\n账号: normal-user\n密码: pass-1')
+  assert.equal(accounts.length, 2)
+  assert.equal(accounts[0].flagged, true)
+  assert.equal(accounts[1].flagged, false)
+})
+
+test('固定格式：不足三段或空字段不误判', () => {
+  const acc = parseAccountBlock(['aaa----bbb'])
+  assert.equal(acc, null)
+  const acc2 = parseAccountBlock(['aaa----bbb----'])
+  assert.equal(acc2, null)
+})

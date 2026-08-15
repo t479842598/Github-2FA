@@ -21,7 +21,12 @@ setup key: G3VDNO6VQNWAUZTW
 otpauth: otpauth://totp/GitHub:CCryD7L6wWRd?secret=G3VDNO6VQNWAUZTW&issuer=GitHub
 恢复码:
   179aa-047a1
-  ec2b1-3ac1d`
+  ec2b1-3ac1d
+
+────────
+
+固定格式（账号----密码----setup key，导入后标记为「被标记」）：
+tqH8iLZ7VEV9----pVBYB9Fh4Mu8ayNEF8----KDI5GIHR6P3HECLE`
 
 const KEY_PLACEHOLDER = `每行一个：账号-密钥（第一个 - 之前是账号，之后是密钥）
 
@@ -306,7 +311,7 @@ export default function ImportPage({ showMessage }) {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">批量导入账号</h2>
-            <p className="text-sm text-muted-foreground">支持用户格式文本（账号/邮箱/密码/setup key/otpauth/恢复码），也支持 JSON 数组</p>
+            <p className="text-sm text-muted-foreground">支持用户格式文本（账号/邮箱/密码/setup key/otpauth/恢复码）、固定格式（账号----密码----setup key，自动标记），也支持 JSON 数组</p>
           </div>
           <div className="flex gap-2">
             <input ref={fileRef} type="file" accept=".txt,.json,.log" className="hidden" onChange={onFile} />
@@ -396,6 +401,7 @@ export default function ImportPage({ showMessage }) {
                   <th className="px-5 py-2.5 font-semibold text-center">2FA 密钥</th>
                   <th className="px-5 py-2.5 font-semibold text-center">恢复码</th>
                   <th className="px-5 py-2.5 font-semibold text-center">PAT</th>
+                  <th className="px-5 py-2.5 font-semibold text-center">标记</th>
                   <th className="px-5 py-2.5 font-semibold text-center">去重</th>
                 </tr>
               </thead>
@@ -423,6 +429,11 @@ export default function ImportPage({ showMessage }) {
                       {p.hasPat
                         ? <span className="inline-block w-2 h-2 rounded-full bg-blue-500" title="已识别" />
                         : <span className="inline-block w-2 h-2 rounded-full bg-muted-foreground/30" title="缺失" />}
+                    </td>
+                    <td className="px-5 py-2.5 text-center">
+                      {p.flagged
+                        ? <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-500 border border-purple-500/20" title="固定格式导入，将标记为「被标记」">标记</span>
+                        : <span className="text-muted-foreground/40">—</span>}
                     </td>
                     <td className="px-5 py-2.5 text-center">
                       {p.dup

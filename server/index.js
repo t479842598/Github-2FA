@@ -86,6 +86,7 @@ app.post('/api/import/keys', requirePasswordChanged)
 app.post('/api/accounts', requirePasswordChanged)
 app.put('/api/accounts/:id', requirePasswordChanged)
 app.delete('/api/accounts/:id', requirePasswordChanged)
+app.post('/api/accounts/flagged/delete', requirePasswordChanged)
 app.post('/api/accounts/:id/github/login', requirePasswordChanged)
 app.post('/api/accounts/:id/github/pat', requirePasswordChanged)
 app.post('/api/accounts/:id/github/cookies', requirePasswordChanged)
@@ -311,6 +312,7 @@ app.post('/api/import', async (req, res) => {
     hasSecret: Boolean(a.secret),
     recoveryCount: a.recoveryCodes.length,
     hasPat: Boolean(a.pat),
+    flagged: Boolean(a.flagged),
     dup: Boolean(vault.findImportDuplicate(a)),
   }))
 
@@ -468,15 +470,26 @@ app.delete('/api/audit', async (req, res) => {
 })
 
 // ---- 批量导出（用户导入格式） ----
+// ?flagged=1 时仅导出被标记账号
 app.get('/api/export', async (req, res) => {
   try {
-    const text = vault.exportText()
-    vault.log('export', '', clientIp(req))
+    const flaggedOnly = req.query.flagged === '1' || req.query.flagged === 'true'
+    const text = vault.exportText({ flaggedOnly })
+    vault.log('export', '', clientIp(req), 'ok', flaggedOnly ? 'flagged only' : 'all')
     await vault.save()
     res.json({ text })
   } catch (e) {
     return fail(res, 500, `导出失败：${e.message}`)
   }
+})
+
+// ---- 批量删除被标记账号 ----
+app.post('/api/accounts/flagged/delete', async (req, res) => {
+  const count = vault.deleteFlaggedAccounts()
+  if (count === 0) return res.json({ success: true, count: 0 })
+  vault.log('flagged_delete', '', clientIp(req), 'ok', `${count} accounts`)
+  await vault.save()
+  res.json({ success: true, count })
 })
 
 // ---- 恢复码使用标记 ----

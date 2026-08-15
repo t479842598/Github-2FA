@@ -36,6 +36,7 @@ function emptyAccount() {
   return {
     username: '', email: '', password: '', setupKey: '', otpauth: '',
     secret: '', recoveryCodes: [], pat: '', remark: '', kvRecords: [],
+    flagged: false,
   }
 }
 
@@ -74,6 +75,20 @@ export function parseAccountBlock(lines) {
   for (const raw of lines) {
     const line = raw.trim()
     if (!line) continue
+
+    // 固定格式：账号----密码----setupkey（四个连字符分隔）→ 标记为「被标记」
+    // 示例：tqH8iLZ7VEV9----pVBYB9Fh4Mu8ayNEF8----KDI5GIHR6P3HECLE
+    const fixed = line.split('----')
+    if (fixed.length >= 3 && fixed[0].trim() && fixed[1].trim() && fixed[2].trim()) {
+      sawField = true
+      if (!acc.username) acc.username = fixed[0].trim()
+      if (!acc.password) acc.password = fixed[1].trim()
+      if (!acc.setupKey) acc.setupKey = fixed[2].trim()
+      acc.flagged = true
+      collectingRecovery = false
+      collectingKv = false
+      continue
+    }
 
     const m = line.match(/^([^:：]+)[:：]\s*(.*)$/)
     if (m) {

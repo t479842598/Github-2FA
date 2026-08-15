@@ -138,6 +138,47 @@ test('导入去重：账号已存在 / 内容重复', async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+test('被标记账号：createAccount 保留 flagged，exportText 过滤，批量删除', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('pw123456')
+  vault.setDataKey('pw123456')
+
+  const flaggedRec = vault.createAccount({ username: 'flag1', password: 'p1', setupKey: 'AAAABBBB', flagged: true })
+  vault.createAccount({ username: 'flag2', password: 'p2', setupKey: 'CCCCDDDD', flagged: true })
+  vault.createAccount({ username: 'normal1', password: 'p3' })
+  await vault.save()
+
+  // 列表暴露 flagged
+  const list = vault.listAccounts()
+  assert.equal(list.find((a) => a.username === 'flag1').flagged, true)
+  assert.equal(list.find((a) => a.username === 'normal1').flagged, false)
+  // 旧数据无 flagged 字段 → false
+  const raw = JSON.parse(readFileSync(vault.filePath, 'utf8'))
+  raw.accounts[0].flagged = undefined
+  writeFileSync(vault.filePath, JSON.stringify(raw))
+  const v2 = new Vault(vault.filePath)
+  await v2.load()
+  v2.setDataKey('pw123456')
+  assert.equal(v2.listAccounts()[0].flagged, false)
+
+  // 导出过滤：flaggedOnly 只含标记账号
+  const all = vault.exportText()
+  const flaggedOnly = vault.exportText({ flaggedOnly: true })
+  assert.ok(all.includes('账号: flag1') && all.includes('账号: normal1'))
+  assert.ok(flaggedOnly.includes('账号: flag1') && flaggedOnly.includes('账号: flag2'))
+  assert.ok(!flaggedOnly.includes('normal1'))
+
+  // 批量删除被标记账号
+  const count = vault.deleteFlaggedAccounts()
+  assert.equal(count, 2)
+  const remain = vault.listAccounts()
+  assert.equal(remain.length, 1)
+  assert.equal(remain[0].username, 'normal1')
+  assert.equal(vault.deleteFlaggedAccounts(), 0)
+  rmSync(dir, { recursive: true, force: true })
+})
+
 test('封号状态：默认 unknown，setBannedStatus 持久化，旧数据兼容', async () => {
   const { vault, dir } = makeVault()
   await vault.load()

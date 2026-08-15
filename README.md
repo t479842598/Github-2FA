@@ -2,7 +2,7 @@
 
 > **团队 GitHub 账号集中管理平台** —— 统一托管团队所有 GitHub 账号的凭据、2FA 动态码、登录会话与访问令牌，一人一套密码，全员安全协作。
 
-![version](https://img.shields.io/badge/version-1.0.1-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![node](https://img.shields.io/badge/node-%3E%3D22-339933)
+![version](https://img.shields.io/badge/version-1.2.0-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![node](https://img.shields.io/badge/node-%3E%3D22-339933)
 
 GitHub 2FA Manager 面向**需要批量管理多个 GitHub 账号的团队/个人**：将账号密码、2FA 密钥、恢复码、PAT 令牌集中加密保管，网页端实时查看 2FA 动态码，自动登录 GitHub 获取会话、一键生成 PAT，并内置审计日志与健康检查，让账号资产"看得见、管得住、查得清"。
 
@@ -34,6 +34,9 @@ GitHub 2FA Manager 面向**需要批量管理多个 GitHub 账号的团队/个�
 | | 审计日志 | 登录/改密/导入/删除/PAT/备份等关键操作全留痕（含 IP），可查看与清空 |
 | | 标签分组 | 账号打标签（≤5 个），列表徽章展示 + 按标签筛选 |
 | | 密钥导入 | opencode / freebuff 密钥按「账号-密钥」批量导入，写入对应账号授权记录 |
+| | 固定格式导入 | 账号----密码----setup key 格式批量导入，自动标记为「被标记」 |
+| | 被标记管理 | 标记徽章展示、一键导出被标记（弹窗预览/复制/下载）、批量删除被标记 |
+| | 导出弹窗 | 普通导出与被标记导出均为弹窗预览，支持复制与下载 .txt |
 | | 批量导出 | 按导入格式导出全部账号（.txt 下载），换机器/换团队无缝迁移 |
 | 💾 数据安全 | 加密备份 | 导出加密备份文件，任意实例输入密码即可完整恢复（导入前自动备份现有数据） |
 | | 字段级校验 | 导入字段长度/条数限长，防存储膨胀 |
@@ -233,7 +236,7 @@ otpauth: otpauth://totp/GitHub:CCryD7L6wWRd?secret=G3VDNO6VQNWAUZTW&issuer=GitHu
 
 | 项目 | 说明 |
 |------|------|
-| 当前版本 | v1.1.0（侧边栏底部与设置页可见） |
+| 当前版本 | v1.2.0（侧边栏底部与设置页可见） |
 | 更新检测 | 设置页「检查更新」或侧边栏版本块，自动查询 GitHub Releases 最新版 |
 | 下载更新 | 检测到新版本后点击链接跳转仓库 Releases 页下载 |
 | 升级步骤 | 备份 data/vault.json → 拉取新代码 → `npm install && npm run build` → 重启服务 |

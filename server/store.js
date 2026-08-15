@@ -15,6 +15,7 @@ export const DEFAULT_PASSWORD = 'sk-admin'
 const EMPTY_ACCOUNT = {
   username: '', email: '', password: '', setupKey: '', otpauth: '',
   secret: '', recoveryCodes: [], pat: '', remark: '', tags: [], kvRecords: [],
+  flagged: false,
 }
 
 // 授权记录规范化：{title, content}，≤20 条，title ≤100 字符，content ≤2000 字符
@@ -194,6 +195,7 @@ export class Vault {
       hasPat: a.hasPat,
       hasEmail: a.hasEmail,
       tags: a.tags || [],
+      flagged: Boolean(a.flagged),
       banned: a.banned || 'unknown',
       bannedCheckedAt: a.bannedCheckedAt || null,
       createdAt: a.createdAt,
@@ -281,6 +283,7 @@ export class Vault {
       username: String(acc.username || '').trim(),
       tags: normalizeTags(acc.tags),
       kvRecords: normalizeKvRecords(acc.kvRecords),
+      flagged: Boolean(acc.flagged),
       banned: 'unknown',
       bannedCheckedAt: null,
       createdAt: now,
@@ -325,6 +328,13 @@ export class Vault {
     if (idx < 0) return false
     this.data.accounts.splice(idx, 1)
     return true
+  }
+
+  // 批量删除所有被标记（flagged）账号，返回删除数量
+  deleteFlaggedAccounts() {
+    const before = this.data.accounts.length
+    this.data.accounts = this.data.accounts.filter((a) => !a.flagged)
+    return before - this.data.accounts.length
   }
 
   // 导入去重：返回命中已存账号的重复项 { reason, account }，否则 null
@@ -419,9 +429,11 @@ export class Vault {
   }
 
   // ---- 批量导出（与导入格式一致，可往返） ----
-  exportText() {
+  // flaggedOnly=true 时只导出被标记（flagged）账号
+  exportText({ flaggedOnly = false } = {}) {
     const parts = []
     for (const a of this.data.accounts) {
+      if (flaggedOnly && !a.flagged) continue
       const lines = []
       if (a.username) lines.push(`账号: ${a.username}`)
       const email = this.dec(a.email)
