@@ -460,10 +460,15 @@ export default function AccountsPage({ showMessage }) {
   }
 
   const handleExportFlagged = async () => {
+    const flaggedCount = accounts.filter((a) => a.flagged).length
+    if (flaggedCount === 0) {
+      showMessage('error', '当前没有被标记账号（固定格式导入的账号会自动标记）')
+      return
+    }
     try {
       const { text } = await api.exportFlagged()
       setExportModal({
-        title: `导出被标记账号（${accounts.filter((a) => a.flagged).length} 个）`,
+        title: `导出被标记账号（${flaggedCount} 个）`,
         text,
         filename: `flagged-accounts-export-${new Date().toISOString().slice(0, 10)}.txt`,
       })
@@ -512,6 +517,7 @@ export default function AccountsPage({ showMessage }) {
     .filter((a) => {
       if (search && !a.username.toLowerCase().includes(search.toLowerCase())) return false
       if (tagFilter && !(a.tags || []).includes(tagFilter)) return false
+      if (statusFilter === 'flagged') return a.flagged === true
       if (statusFilter && a.banned !== statusFilter) return false
       return true
     })
@@ -593,6 +599,7 @@ export default function AccountsPage({ showMessage }) {
               <option value="">全部状态</option>
               <option value="normal">正常</option>
               <option value="banned">被封</option>
+              <option value="flagged">被标记</option>
             </select>
             <button
               onClick={forceBannedCheck}
@@ -607,18 +614,20 @@ export default function AccountsPage({ showMessage }) {
               <Download className="w-3 h-3 mr-1.5" />
               导出
             </button>
-            {accounts.some((a) => a.flagged) && (
-              <>
-                <button onClick={handleExportFlagged} className="flex items-center justify-center flex-1 sm:flex-none px-3 py-2 bg-amber-500/10 text-amber-500 rounded-lg hover:bg-amber-500/20 transition-colors text-xs font-medium border border-amber-500/30 whitespace-nowrap" title="导出全部被标记账号">
-                  <Flag className="w-3 h-3 mr-1.5" />
-                  导出被标记
-                </button>
-                <button onClick={() => setConfirmFlaggedDelete(true)} className="flex items-center justify-center flex-1 sm:flex-none px-3 py-2 bg-destructive/10 text-destructive rounded-lg hover:bg-destructive/20 transition-colors text-xs font-medium border border-destructive/30 whitespace-nowrap" title="批量删除全部被标记账号">
-                  <Trash2 className="w-3 h-3 mr-1.5" />
-                  删除被标记
-                </button>
-              </>
-            )}
+            <button onClick={handleExportFlagged} className="flex items-center justify-center flex-1 sm:flex-none px-3 py-2 bg-amber-500/10 text-amber-500 rounded-lg hover:bg-amber-500/20 transition-colors text-xs font-medium border border-amber-500/30 whitespace-nowrap" title="导出全部被标记账号">
+              <Flag className="w-3 h-3 mr-1.5" />
+              导出被标记
+            </button>
+            <button onClick={() => {
+              if (!accounts.some((a) => a.flagged)) {
+                showMessage('error', '当前没有被标记账号（固定格式导入的账号会自动标记）')
+                return
+              }
+              setConfirmFlaggedDelete(true)
+            }} className="flex items-center justify-center flex-1 sm:flex-none px-3 py-2 bg-destructive/10 text-destructive rounded-lg hover:bg-destructive/20 transition-colors text-xs font-medium border border-destructive/30 whitespace-nowrap" title="批量删除全部被标记账号">
+              <Trash2 className="w-3 h-3 mr-1.5" />
+              删除被标记
+            </button>
             <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[140px] order-first sm:order-none">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
