@@ -129,6 +129,25 @@ test('固定格式：文本多行解析且保留标记', () => {
   assert.equal(accounts[1].flagged, false)
 })
 
+test('固定格式：连续多行无空行分隔也逐行解析', () => {
+  const accounts = parseText('A1----pa1----SKEYAAA\nB2----pb2----SKEYBBB\nC3----pc3----SKEYCCC')
+  assert.equal(accounts.length, 3)
+  assert.equal(accounts[0].username, 'A1')
+  assert.equal(accounts[1].username, 'B2')
+  assert.equal(accounts[2].username, 'C3')
+  assert.ok(accounts.every((a) => a.flagged === true))
+})
+
+test('固定格式：普通格式与固定格式混合解析', () => {
+  const accounts = parseText('账号: n1\n密码: p1\n\nX9----px9----SKEY999\n\n账号: n2\n密码: p2')
+  assert.equal(accounts.length, 3)
+  assert.equal(accounts[0].username, 'n1')
+  assert.equal(accounts[0].flagged, false)
+  assert.equal(accounts[1].username, 'X9')
+  assert.equal(accounts[1].flagged, true)
+  assert.equal(accounts[2].username, 'n2')
+})
+
 test('固定格式：不足三段或空字段不误判', () => {
   const acc = parseAccountBlock(['aaa----bbb'])
   assert.equal(acc, null)

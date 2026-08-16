@@ -347,10 +347,14 @@ export default function ImportPage({ showMessage }) {
       {result && (
         <div className="card p-5 space-y-3">
           <h3 className="text-base font-semibold">导入结果</h3>
-          <div className="grid grid-cols-3 gap-3 max-w-md">
+          <div className="grid grid-cols-4 gap-3 max-w-lg">
             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2.5 text-center">
               <div className="text-xl font-bold text-emerald-500">{result.imported}</div>
               <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">新增</div>
+            </div>
+            <div className="rounded-lg border border-purple-500/20 bg-purple-500/10 px-3 py-2.5 text-center">
+              <div className="text-xl font-bold text-purple-500">{(result.flaggedUpdated || []).length}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">已标记</div>
             </div>
             <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2.5 text-center">
               <div className="text-xl font-bold text-amber-500">{result.skipped.length}</div>
@@ -361,6 +365,11 @@ export default function ImportPage({ showMessage }) {
               <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">失败</div>
             </div>
           </div>
+          {(result.flaggedUpdated || []).length > 0 && (
+            <div className="text-xs text-purple-500">
+              已标记：{result.flaggedUpdated.join('、')} —— 这些账号已打上「被标记」标识（无法三方登录）
+            </div>
+          )}
           {result.skipped.length > 0 && (
             <div className="text-xs text-muted-foreground">
               跳过：{result.skipped.map((s) => `${s.username}${s.reason ? `（${s.reason}）` : ''}`).join('、')}
@@ -381,8 +390,11 @@ export default function ImportPage({ showMessage }) {
               <h3 className="text-base font-semibold">解析预览</h3>
               <p className="text-sm text-muted-foreground">
                 识别到 {preview.length} 个账号，确认无误后点击「一键导入」
-                {preview.filter((p) => p.dup).length > 0 && (
-                  <span className="ml-1.5 text-amber-500">（其中 {preview.filter((p) => p.dup).length} 个与已有账号重复，将自动跳过）</span>
+                {preview.filter((p) => p.willFlag).length > 0 && (
+                  <span className="ml-1.5 text-purple-500">（其中 {preview.filter((p) => p.willFlag).length} 个已有账号将更新「被标记」标识）</span>
+                )}
+                {preview.filter((p) => p.dup && !p.willFlag).length > 0 && (
+                  <span className="ml-1.5 text-amber-500">（其中 {preview.filter((p) => p.dup && !p.willFlag).length} 个与已有账号重复，将自动跳过）</span>
                 )}
               </p>
             </div>
@@ -436,13 +448,19 @@ export default function ImportPage({ showMessage }) {
                         : <span className="text-muted-foreground/40">—</span>}
                     </td>
                     <td className="px-5 py-2.5 text-center">
-                      {p.dup
-                        ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20" title="与已有账号重复，导入时将跳过">
-                            重复
-                          </span>
-                        : <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                            新增
-                          </span>}
+                      {p.willFlag ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-500 border border-purple-500/20" title="账号已存在，将更新其「被标记」标识（不跳过）">
+                          已标记（更新标识）
+                        </span>
+                      ) : p.dup ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20" title="与已有账号重复，导入时将跳过">
+                          重复
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                          新增
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

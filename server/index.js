@@ -305,21 +305,27 @@ app.post('/api/import', async (req, res) => {
     return fail(res, 400, `解析失败：${e.message}`)
   }
 
-  const preview = parsed.map((a) => ({
-    username: a.username,
-    email: a.email,
-    hasPassword: Boolean(a.password),
-    hasSecret: Boolean(a.secret),
-    recoveryCount: a.recoveryCodes.length,
-    hasPat: Boolean(a.pat),
-    flagged: Boolean(a.flagged),
-    dup: Boolean(vault.findImportDuplicate(a)),
-  }))
+  const preview = parsed.map((a) => {
+    const dup = vault.findImportDuplicate(a)
+    return {
+      username: a.username,
+      email: a.email,
+      hasPassword: Boolean(a.password),
+      hasSecret: Boolean(a.secret),
+      recoveryCount: a.recoveryCodes.length,
+      hasPat: Boolean(a.pat),
+      flagged: Boolean(a.flagged),
+      // 固定格式（被标记）导入遇到已存在账号：标记为「已标记（更新标识）」而非重复跳过
+      dup: Boolean(dup && !(a.flagged && dup.account)),
+      willFlag: Boolean(a.flagged && dup),
+    }
+  })
 
   if (dry) return res.json({ preview, count: preview.length })
 
   let imported = 0
   const skipped = []
+  const flaggedUpdated = []
   const errors = []
   for (const raw of parsed) {
     const acc = sanitizeAccount(raw)
@@ -329,6 +335,12 @@ app.post('/api/import', async (req, res) => {
     }
     const dup = vault.findImportDuplicate(acc)
     if (dup) {
+      // 固定格式导入（被标记账号）：即使账号已存在，也要把标识打上，而不是跳过
+      if (acc.flagged && dup.account) {
+        vault.setFlagged(dup.account.id, true)
+        flaggedUpdated.push(acc.username || acc.email)
+        continue
+      }
       skipped.push({ username: acc.username || acc.email, reason: dup.reason })
       continue
     }
@@ -336,8 +348,8 @@ app.post('/api/import', async (req, res) => {
     imported += 1
   }
   await vault.save()
-  vault.log('import', '', clientIp(req), 'ok', `${imported} imported / ${skipped.length} skipped`)
-  res.json({ imported, skipped, errors })
+  vault.log('import', '', clientIp(req), 'ok', `${imported} imported / ${flaggedUpdated.length} flagged / ${skipped.length} skipped`)
+  res.json({ imported, skipped, flaggedUpdated, errors })
 })
 
 // opencode / freebuff 密钥导入：每行「账号-key」，保存到对应账号授权记录

@@ -399,6 +399,15 @@ export class Vault {
     return true
   }
 
+  // 设置/清除「被标记」标识（明文，非敏感）
+  setFlagged(id, flagged) {
+    const a = this.getAccount(id)
+    if (!a) return false
+    a.flagged = Boolean(flagged)
+    a.updatedAt = Date.now()
+    return true
+  }
+
   // ---- 修改密码：重派生密钥并全量重加密 ----
   async changePassword(oldPassword, newPassword) {
     if (!this.verifyPassword(oldPassword)) return false

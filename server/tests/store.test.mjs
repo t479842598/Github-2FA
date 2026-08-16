@@ -179,6 +179,21 @@ test('被标记账号：createAccount 保留 flagged，exportText 过滤，批�
   rmSync(dir, { recursive: true, force: true })
 })
 
+test('setFlagged：设置/清除被标记标识，旧数据兼容', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('pw123456')
+  vault.setDataKey('pw123456')
+  const rec = vault.createAccount({ username: 'flag-update' })
+  assert.equal(vault.listAccounts()[0].flagged, false)
+  assert.equal(vault.setFlagged(rec.id, true), true)
+  assert.equal(vault.listAccounts()[0].flagged, true)
+  assert.equal(vault.setFlagged(rec.id, false), true)
+  assert.equal(vault.listAccounts()[0].flagged, false)
+  assert.equal(vault.setFlagged('nonexistent', true), false)
+  rmSync(dir, { recursive: true, force: true })
+})
+
 test('封号状态：默认 unknown，setBannedStatus 持久化，旧数据兼容', async () => {
   const { vault, dir } = makeVault()
   await vault.load()

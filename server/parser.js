@@ -153,10 +153,35 @@ export function parseText(text) {
   const blocks = splitBlocks(text)
   const results = []
   for (const block of blocks) {
-    const acc = parseAccountBlock(block)
-    if (acc) results.push(acc)
+    // 块内按「固定格式行（账号----密码----setupkey）」切分子块：每行一个被标记账号
+    let sub = []
+    for (const line of block) {
+      const fixed = line.trim().split('----')
+      const isFixed = fixed.length >= 3 && fixed[0].trim() && fixed[1].trim() && fixed[2].trim()
+      if (isFixed && sub.length > 0 && !isFixedLine(sub[0])) {
+        // 已积累普通格式内容 + 出现固定格式行 → 先收尾普通部分
+        results.push(parseAccountBlock(sub))
+        sub = []
+      }
+      sub.push(line)
+      if (isFixed) {
+        // 固定格式行立即结算为独立账号，不混入后续行
+        results.push(parseAccountBlock([line]))
+        sub = []
+      }
+    }
+    if (sub.length > 0) {
+      const acc = parseAccountBlock(sub)
+      if (acc) results.push(acc)
+    }
   }
-  return results
+  return results.filter(Boolean)
+}
+
+// 判断行是否为固定格式（账号----密码----setupkey）
+function isFixedLine(line) {
+  const fixed = String(line).trim().split('----')
+  return fixed.length >= 3 && fixed[0].trim() && fixed[1].trim() && fixed[2].trim()
 }
 
 const JSON_KEY_MAP = {
