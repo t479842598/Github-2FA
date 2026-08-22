@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Check, Copy, Eye, EyeOff, Flag, KeyRound, ListPlus, Pencil, Plus, RefreshCw, Search, ShieldCheck, ShieldAlert, QrCode, Tag, Trash2,
+  Check, Copy, Download, Eye, EyeOff, Flag, KeyRound, ListPlus, Pencil, Plus, RefreshCw, Search, ShieldCheck, ShieldAlert, QrCode, Tag, Trash2,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../api.js'
