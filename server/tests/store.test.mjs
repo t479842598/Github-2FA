@@ -95,6 +95,148 @@ test('账号 CRUD + 字段加密存储', async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+test('导入去重索引与实时扫描语义一致（含导入批次内去重）', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('pw123456')
+  vault.setDataKey('pw123456')
+
+  vault.createAccount({
+    username: 'alice',
+    password: 'pass-a',
+    setupKey: 'AAAA1111',
+    otpauth: 'otpauth://totp/GitHub:alice?secret=AAAA1111&issuer=GitHub',
+  })
+  const idx = vault.buildDupIndex()
+
+  // 索引与实时扫描判定一致
+  assert.equal(vault.findImportDuplicate({ username: 'ALICE', password: 'x' }, idx).reason, '账号已存在')
+  assert.equal(vault.findImportDuplicate({ username: 'carol' }, idx), null)
+
+  // 模拟导入循环：新建账号后追加进索引，后续同批次重复项能被识别
+  const rec = vault.createAccount({ username: 'dave', password: 'pass-d', setupKey: 'DDDD2222' })
+  idx.push({
+    account: rec,
+    username: 'dave',
+    password: 'pass-d',
+    setupKey: 'DDDD2222',
+    otpauth: '',
+  })
+  const dup = vault.findImportDuplicate({ username: 'dave2', password: 'pass-d', setupKey: 'DDDD2222' }, idx)
+  assert.ok(dup && dup.reason === '内容与已有账号重复')
+  assert.equal(dup.account.id, rec.id)
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('save 后数据文件权限为 0600，且串行落盘不互相覆盖', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('pw123456')
+  vault.setDataKey('pw123456')
+  vault.createAccount({ username: 'perm-check', password: 'p1' })
+
+  // 并发多次 save（模拟多请求同时落盘）
+  await Promise.all([vault.save(), vault.save(), vault.save()])
+  const stat = await import('node:fs').then((fs) => fs.statSync(vault.filePath))
+  assert.equal(stat.mode & 0o777, 0o600)
+  // 数据完整可读
+  const v2 = new Vault(vault.filePath)
+  await v2.load()
+  v2.setDataKey('pw123456')
+  assert.equal(v2.listAccounts().length, 1)
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('save 串行化：一次写失败后，后续排队写仍执行', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('pw123456')
+  vault.setDataKey('pw123456')
+
+  // 第一次：把写目标变成目录，模拟写失败
+  const evilDir = path.join(dir, 'evil.json')
+  await import('node:fs').then((fs) => fs.mkdirSync(evilDir))
+  const v = new Vault(evilDir)
+  v.data = vault.data
+  v.dataKey = vault.dataKey
+  await assert.rejects(() => v.save())
+  // 排队的第二次写：目标仍是目录 → 也失败，但链不卡死
+  await assert.rejects(() => v.save())
+
+  // 移除阻碍后，后续 save 恢复正常（链被 catch 吞掉，可继续排队）
+  await import('node:fs').then((fs) => fs.rmSync(evilDir, { recursive: true }))
+  await v.save()
+  const stat = await import('node:fs').then((fs) => fs.statSync(evilDir))
+  assert.equal(stat.isFile(), true)
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('备份导出含审计日志；导入后审计日志保留', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('backup-pass')
+  vault.setDataKey('backup-pass')
+  vault.createAccount({ username: 'u1', password: 'p1' })
+  vault.log('login_ok', 'u1', '1.2.3.4')
+  await vault.save()
+  const backup = vault.exportBackup()
+  assert.ok(Array.isArray(backup.auditLog) && backup.auditLog.length >= 1)
+
+  const { vault: v2, dir: dir2 } = makeVault()
+  await v2.load()
+  await v2.importBackup(backup, 'backup-pass')
+  assert.ok(v2.getAuditLog().some((l) => l.action === 'login_ok'))
+  rmSync(dir, { recursive: true, force: true })
+  rmSync(dir2, { recursive: true, force: true })
+})
+
+test('备份无 password/email 字段（仅 setupKey）时错误密码仍被拒绝', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('backup-pass')
+  vault.setDataKey('backup-pass')
+  vault.createAccount({ username: 'u1', setupKey: 'ABCDEFGH' })
+  await vault.save()
+  const backup = vault.exportBackup()
+
+  const { vault: v2, dir: dir2 } = makeVault()
+  await v2.load()
+  await assert.rejects(() => v2.importBackup(backup, 'wrong-pass'), /密码错误/)
+  // 正确密码可导入
+  const count = await v2.importBackup(backup, 'backup-pass')
+  assert.equal(count, 1)
+  rmSync(dir, { recursive: true, force: true })
+  rmSync(dir2, { recursive: true, force: true })
+})
+
+test('updateAccount 补 otpauth 后 hasSecret 由 false→true（无 secret → 补 2FA）', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('pw123456')
+  vault.setDataKey('pw123456')
+
+  // 无 secret 账号
+  const rec = vault.createAccount({ username: 'nof2a', password: 'p1' })
+  assert.equal(vault.listAccounts().find((a) => a.id === rec.id).hasSecret, false)
+
+  // 编辑补 otpauth（新 EditModal 保存路径）→ hasSecret 应变 true，getSecret 可解
+  vault.updateAccount(rec.id, {
+    otpauth: 'otpauth://totp/GitHub:nof2a?secret=KDI5GIHR6P3HECLE&issuer=GitHub',
+  })
+  assert.equal(vault.listAccounts().find((a) => a.id === rec.id).hasSecret, true)
+  assert.equal(vault.getSecret(rec.id), 'KDI5GIHR6P3HECLE')
+
+  // 清空 otpauth + setupKey → hasSecret 回 false
+  vault.updateAccount(rec.id, { otpauth: '', setupKey: '' })
+  assert.equal(vault.listAccounts().find((a) => a.id === rec.id).hasSecret, false)
+
+  // 裸 secret 字段归一为 setupKey
+  vault.updateAccount(rec.id, { secret: 'BBBB2222' })
+  assert.equal(vault.listAccounts().find((a) => a.id === rec.id).hasSecret, true)
+  assert.equal(vault.getSecret(rec.id), 'BBBB2222')
+  rmSync(dir, { recursive: true, force: true })
+})
+
 test('导入去重：账号已存在 / 内容重复', async () => {
   const { vault, dir } = makeVault()
   await vault.load()
@@ -191,6 +333,55 @@ test('setFlagged：设置/清除被标记标识，旧数据兼容', async () => 
   assert.equal(vault.setFlagged(rec.id, false), true)
   assert.equal(vault.listAccounts()[0].flagged, false)
   assert.equal(vault.setFlagged('nonexistent', true), false)
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('exportKeys：按类型导出「账号-密钥」格式（含日期标注记录）', async () => {
+  const { vault, dir } = makeVault()
+  await vault.load()
+  await vault.setupPassword('pw123456')
+  vault.setDataKey('pw123456')
+
+  vault.createAccount({
+    username: 'alice',
+    kvRecords: [
+      { title: 'opencode', content: 'sk-AAA111' },
+      { title: 'freebuff', content: 'FB-222' },
+    ],
+  })
+  vault.createAccount({
+    username: 'bob',
+    kvRecords: [
+      { title: 'freebuff', content: 'FB-333' },
+      { title: 'freebuff 2026-08-22', content: 'FB-444' }, // 密钥更新的日期标注记录也应导出
+    ],
+  })
+  vault.createAccount({ username: 'carol', kvRecords: [{ title: 'opencode', content: '' }] })
+  vault.createAccount({ username: 'nokey' })
+  await vault.save()
+
+  // opencode 导出：只含 opencode 记录，不含 freebuff / 空内容 / 无记录账号
+  const oc = vault.exportKeys({ name: 'opencode' })
+  assert.ok(oc.includes('alice-sk-AAA111'))
+  assert.ok(!oc.includes('FB-'))
+  assert.ok(!oc.includes('bob-'))
+  assert.ok(!oc.includes('carol-'))
+  assert.ok(!oc.includes('nokey-'))
+
+  // freebuff 导出：含日期标注记录，不含 opencode
+  const fb = vault.exportKeys({ name: 'freebuff' })
+  assert.ok(fb.includes('alice-FB-222'))
+  assert.ok(fb.includes('bob-FB-333'))
+  assert.ok(fb.includes('bob-FB-444'))
+  assert.ok(!fb.includes('sk-AAA111'))
+  assert.ok(!fb.includes('carol-'))
+
+  // 空库/无匹配 → 空字符串
+  const empty = new Vault(path.join(dir, 'empty.json'))
+  await empty.load()
+  await empty.setupPassword('pw123456')
+  empty.setDataKey('pw123456')
+  assert.equal(empty.exportKeys({ name: 'opencode' }), '')
   rmSync(dir, { recursive: true, force: true })
 })
 

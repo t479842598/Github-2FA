@@ -1,14 +1,22 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowRight, Key, Lock, ShieldCheck } from 'lucide-react'
 import ThemeToggle from './ThemeToggle.jsx'
 import { api, setToken } from '../api.js'
-
-const VERSION = '0.0.1'
 
 export default function Login({ onAuthed }) {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [version, setVersion] = useState('')
+  const [mustChangePassword, setMustChangePassword] = useState(false)
+
+  // 版本号与「是否仍为默认密码」从服务端拉取，避免硬编码过期
+  useEffect(() => {
+    api.status().then((s) => {
+      setVersion(s.version || '')
+      setMustChangePassword(Boolean(s.mustChangePassword))
+    }).catch(() => {})
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -83,11 +91,13 @@ export default function Login({ onAuthed }) {
             </button>
           </form>
 
-          <div className="mt-6 px-4 py-3 rounded-lg border border-amber-500/20 bg-amber-500/10">
-            <div className="text-[11px] text-amber-500 font-medium mb-0.5">首次使用默认密码</div>
-            <code className="font-mono text-xs text-amber-500/90 select-all">sk-admin</code>
-            <span className="text-[11px] text-muted-foreground ml-2">登录后需立即修改</span>
-          </div>
+          {mustChangePassword && (
+            <div className="mt-6 px-4 py-3 rounded-lg border border-amber-500/20 bg-amber-500/10">
+              <div className="text-[11px] text-amber-500 font-medium mb-0.5">首次使用默认密码</div>
+              <code className="font-mono text-xs text-amber-500/90 select-all">sk-admin</code>
+              <span className="text-[11px] text-muted-foreground ml-2">登录后需立即修改</span>
+            </div>
+          )}
 
           <div className="mt-5 flex justify-center border-t border-border pt-4">
             <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
@@ -97,7 +107,7 @@ export default function Login({ onAuthed }) {
           </div>
         </div>
         <p className="mt-6 text-center font-mono text-[10px] text-muted-foreground/50">
-          GitHub 2FA Manager v{VERSION} · 团队 GitHub 账号集中管理
+          GitHub 2FA Manager{version ? ` v${version}` : ''} · 团队 GitHub 账号集中管理
         </p>
       </div>
     </div>

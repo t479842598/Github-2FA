@@ -2,6 +2,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { encrypt, decrypt, deriveKey, verifyPassword, hashPassword, randomHex, uuid } from './crypto.js'
+import { secretFromUri } from './totp.js'
 
 const SENSITIVE_FIELDS = ['email', 'password', 'setupKey', 'otpauth', 'recoveryCodes', 'pat', 'remark', 'kvRecords']
 
@@ -81,11 +82,21 @@ export class Vault {
     return this.data
   }
 
-  async save() {
+  async _writeFile() {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true })
     const tmp = `${this.filePath}.tmp`
     await fs.writeFile(tmp, JSON.stringify(this.data, null, 2), 'utf8')
+    await fs.chmod(tmp, 0o600) // 数据文件含密钥，仅属主可读写
     await fs.rename(tmp, this.filePath)
+  }
+
+  // 串行化落盘：并发写请求排队，避免 tmp 文件交错覆盖
+  // 即使前一次写失败，后续排队写仍会执行；本次调用方仍能感知自己的写失败
+  save() {
+    const prev = this._saveChain || Promise.resolve()
+    const next = prev.then(() => this._writeFile(), () => this._writeFile())
+    this._saveChain = next.catch(() => {}) // 链吞掉错误，避免影响后续排队
+    return next
   }
 
   // ---- 密码 / 密钥 ----
@@ -288,7 +299,7 @@ export class Vault {
       bannedCheckedAt: null,
       createdAt: now,
       updatedAt: now,
-      hasSecret: Boolean(acc.secret || acc.setupKey || acc.otpauth),
+      hasSecret: Boolean(secretFromUri(acc.otpauth) || acc.setupKey),
       hasPat: Boolean(acc.pat),
       hasEmail: Boolean(acc.email),
     }
@@ -306,6 +317,12 @@ export class Vault {
     if ('kvRecords' in patch) {
       patch.kvRecords = normalizeKvRecords(patch.kvRecords) // 先规范化再加密
     }
+    // 裸 secret 字段（旧 API/解析器遗留）归一为 setupKey，避免被静默丢弃
+    // 仅当 setupKey/otpauth 都未显式传时才归一，避免覆盖更明确的字段
+    if ('secret' in patch && !('setupKey' in patch) && !('otpauth' in patch)) {
+      patch.setupKey = patch.secret ?? ''
+    }
+    delete patch.secret
     for (const f of SENSITIVE_FIELDS) {
       if (f in patch) {
         a[f] = this.enc(patch[f])
@@ -313,12 +330,13 @@ export class Vault {
     }
     if ('username' in patch) a.username = String(patch.username || '').trim()
     if ('tags' in patch) a.tags = normalizeTags(patch.tags)
-    if ('secret' in patch) a.hasSecret = Boolean(patch.secret)
-    // 依据新值重算标记
-    const secret = this.getSecret(id)
+    // 依据新值重算标记：直接解密重算，绕开 getSecret 的旧标志门控（支持 false→true）
+    const secret = secretFromUri(this.dec(a.otpauth)) || this.dec(a.setupKey) || null
     a.hasSecret = Boolean(secret)
-    a.hasPat = Boolean(patch.pat !== undefined ? patch.pat : (this.dec(a.pat) && this.dec(a.pat) !== '__decrypt_failed__'))
-    a.hasEmail = Boolean(patch.email !== undefined ? patch.email : (this.dec(a.email) && this.dec(a.email) !== '__decrypt_failed__'))
+    const patVal = patch.pat !== undefined ? patch.pat : this.dec(a.pat)
+    a.hasPat = Boolean(patVal && patVal !== '__decrypt_failed__')
+    const emailVal = patch.email !== undefined ? patch.email : this.dec(a.email)
+    a.hasEmail = Boolean(emailVal && emailVal !== '__decrypt_failed__')
     a.updatedAt = now
     return a
   }
@@ -337,24 +355,38 @@ export class Vault {
     return before - this.data.accounts.length
   }
 
+  // 导入去重索引：一次性解密全部已有账号的比对字段，供导入循环复用
+  // （避免每个导入项都全量解密 O(N×M)，导入循环内新建账号需手动 push 保持同步）
+  buildDupIndex() {
+    return this.data.accounts.map((a) => ({
+      account: a,
+      username: String(a.username || '').trim().toLowerCase(),
+      password: this.dec(a.password),
+      setupKey: this.dec(a.setupKey),
+      otpauth: this.dec(a.otpauth),
+    }))
+  }
+
   // 导入去重：返回命中已存账号的重复项 { reason, account }，否则 null
   // 规则：① 账号（用户名）已存在 → 重复；② 密码、setup key、otpauth 与已存账号完全一致 → 重复（账号不同也算）
   // 说明：② 仅当导入项至少含一个凭据字段时启用，避免「空凭据新账号」被误判重复
-  findImportDuplicate({ username, email, password, setupKey, otpauth }) {
+  // 性能：传入 buildDupIndex() 的结果可避免逐项解密；缺省时退化为实时全量扫描（语义一致）
+  findImportDuplicate({ username, email, password, setupKey, otpauth }, dupIndex = null) {
+    const rows = dupIndex || this.buildDupIndex()
     const entryKey = String(username || email || '').trim().toLowerCase()
     if (entryKey) {
-      for (const a of this.data.accounts) {
-        if (String(a.username || '').trim().toLowerCase() === entryKey) {
-          return { reason: '账号已存在', account: a }
+      for (const row of rows) {
+        if (row.username === entryKey) {
+          return { reason: '账号已存在', account: row.account }
         }
       }
     }
     if (password || setupKey || otpauth) {
-      for (const a of this.data.accounts) {
-        if (plainEq(this.dec(a.password), password) &&
-            plainEq(this.dec(a.setupKey), setupKey) &&
-            plainEq(this.dec(a.otpauth), otpauth)) {
-          return { reason: '内容与已有账号重复', account: a }
+      for (const row of rows) {
+        if (plainEq(row.password, password) &&
+            plainEq(row.setupKey, setupKey) &&
+            plainEq(row.otpauth, otpauth)) {
+          return { reason: '内容与已有账号重复', account: row.account }
         }
       }
     }
@@ -472,6 +504,24 @@ export class Vault {
     return parts.join('\n\n────────\n\n')
   }
 
+  // ---- 密钥导出（opencode / freebuff）----
+  // 输出「账号-密钥」格式，与密钥导入 parseKeyList 格式一致，可往返
+  // name: 'opencode' | 'freebuff'；密钥更新的日期标注记录（如 "freebuff 2026-08-22"）一并导出
+  exportKeys({ name = 'opencode' } = {}) {
+    const target = String(name)
+    const lines = []
+    for (const a of this.data.accounts) {
+      const kv = this.decKvRecords(a.kvRecords)
+      if (!kv.length) continue
+      for (const r of kv) {
+        if (r.title !== target && !r.title.startsWith(`${target} `)) continue
+        if (!r.content) continue
+        lines.push(`${a.username}-${r.content}`)
+      }
+    }
+    return lines.join('\n')
+  }
+
   // ---- 备份导出/导入 ----
   exportBackup() {
     return {
@@ -482,6 +532,7 @@ export class Vault {
         createdAt: this.data.meta.createdAt,
       },
       accounts: this.data.accounts.map((a) => ({ ...a })),
+      auditLog: this.data.auditLog || [],
     }
   }
 
@@ -494,12 +545,13 @@ export class Vault {
     if (!salt) throw new Error('备份文件缺少 salt，无法解密')
     const key = deriveKey(password, salt)
 
-    // 试解密第一个账号，验证密码正确性
-    const sample = backup.accounts.find((a) => a.password || a.email)
+    // 试解密任意一个加密字段，验证密码正确性（不限于 password/email）
+    const ALL_FIELDS = [...SENSITIVE_FIELDS, 'ghSession']
+    const sample = backup.accounts.find((a) => ALL_FIELDS.some((f) => a[f]))
     if (sample) {
-      const encField = sample.password || sample.email
+      const encField = ALL_FIELDS.find((f) => sample[f])
       try {
-        decrypt(key, encField)
+        decrypt(key, sample[encField])
       } catch {
         throw new Error('密码错误或备份已损坏，无法解密')
       }
@@ -507,7 +559,9 @@ export class Vault {
 
     // 导入前自动备份当前数据
     if (this.data.accounts.length > 0) {
-      await fs.writeFile(`${this.filePath}.pre-import.json`, JSON.stringify(this.data, null, 2), 'utf8')
+      const pre = `${this.filePath}.pre-import.json`
+      await fs.writeFile(pre, JSON.stringify(this.data, null, 2), 'utf8')
+      await fs.chmod(pre, 0o600)
     }
 
     const { hash } = hashPassword(password, Buffer.from(salt, 'hex'))
@@ -521,6 +575,7 @@ export class Vault {
         createdAt: backup.meta?.createdAt || Date.now(),
       },
       accounts: backup.accounts,
+      auditLog: Array.isArray(backup.auditLog) ? backup.auditLog : [],
     }
     this.dataKey = key
     await this.save()

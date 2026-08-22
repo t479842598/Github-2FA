@@ -40,7 +40,7 @@ function emptyAccount() {
   }
 }
 
-// 文本 → 行块数组（分隔线 / 空行切块，连续空行合并）
+// 文本 → 行块数组（分隔线 / 空行切块，连续空行只计一次切分）
 export function splitBlocks(text) {
   const lines = String(text).split(/\r?\n/)
   const blocks = []

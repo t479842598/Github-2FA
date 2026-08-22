@@ -196,6 +196,12 @@ export function extractScopes(html) {
   return scopes
 }
 
+// 会话建立标志：user_session 存在或 logged_in=yes
+// （登录页本身会下发 logged_in=no，不能作数，必须严格比较）
+export function isSessionEstablished(jar) {
+  return Boolean(jar.get('user_session')) || jar.get('logged_in') === 'yes'
+}
+
 // ---------- 登录流程 ----------
 export async function loginToGithub({ username, password, secret, jar, force2fa = true }) {
   const ctx = { jar: jar || new CookieJar() }
@@ -222,8 +228,7 @@ export async function loginToGithub({ username, password, secret, jar, force2fa 
   const res = await ghPost(ctx.jar, '/session', body, { referer: `${BASE}/login` })
 
   // 会话建立标志：user_session 存在或 logged_in=yes（登录页本身会下发 logged_in=no，不能作数）
-  const sessionEstablished = () =>
-    Boolean(ctx.jar.get('user_session')) || ctx.jar.get('logged_in') === 'yes'
+  const sessionEstablished = () => isSessionEstablished(ctx.jar)
 
   if (sessionEstablished()) {
     await finishLogin(ctx, username)
@@ -237,13 +242,12 @@ export async function loginToGithub({ username, password, secret, jar, force2fa 
     for (const delay of [3000, 6000]) {
       await new Promise((r) => setTimeout(r, delay))
       const retry = await ghPost(ctx.jar, '/session', body, { referer: `${BASE}/login` })
-      const retryHtml = await retry.text()
+      await retry.text()
       if (sessionEstablished()) {
         await finishLogin(ctx, username)
         return ctx.jar
       }
       if (retry.status !== 422) break
-      void retryHtml
     }
     const finalHtml = await ghPost(ctx.jar, '/session', body, { referer: `${BASE}/login` }).then((r) => r.text())
     if (sessionEstablished()) {
@@ -270,7 +274,7 @@ export async function loginToGithub({ username, password, secret, jar, force2fa 
       ...(otpRequired.length ? Object.fromEntries(otpRequired.map((f) => [f, ''])) : {}),
     }, { referer: `${BASE}/session` })
 
-    if (ctx.jar.get('user_session') || ctx.jar.get('logged_in')) {
+    if (isSessionEstablished(ctx.jar)) {
       await finishLogin(ctx, username)
       return ctx.jar
     }
@@ -292,9 +296,9 @@ export async function loginToGithub({ username, password, secret, jar, force2fa 
 
 // 登录成功后的公共收尾：验证会话 cookie 并记录
 async function finishLogin(ctx, username) {
-  // 跟随到主页验证 logged_in
-  const home = await ghGetText(ctx.jar, '/')
-  if (!ctx.jar.get('logged_in') && !ctx.jar.get('user_session')) {
+  // 跟随到主页验证会话（确认 logged_in=yes / user_session）
+  await ghGetText(ctx.jar, '/')
+  if (!isSessionEstablished(ctx.jar)) {
     throw new GhError('LOGIN_FAILED', '登录后未获得会话 cookie')
   }
   // 从主页提取已登录用户名（可选，验证用）

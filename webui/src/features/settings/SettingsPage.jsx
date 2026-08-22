@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DatabaseBackup, Download, ExternalLink, KeyRound, ListChecks, Lock, RefreshCw, Trash2, Upload } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../api.js'
@@ -14,12 +14,19 @@ const ACTION_LABELS = {
 function UpdatePanel() {
   const [info, setInfo] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [current, setCurrent] = useState('')
+
+  // 当前版本从 /api/status 拉取（避免硬编码过期）
+  useEffect(() => {
+    api.status().then((s) => setCurrent(s.version || '')).catch(() => {})
+  }, [])
 
   const check = async () => {
     setLoading(true)
     try {
       const d = await api.updateCheck()
       setInfo(d)
+      setCurrent(d.current || current)
     } catch (e) {
       setInfo({ error: e.message })
     } finally {
@@ -36,7 +43,7 @@ function UpdatePanel() {
           </div>
           <div>
             <h2 className="text-lg font-semibold">版本与更新</h2>
-            <p className="text-sm text-muted-foreground">当前版本 v{info?.current || '0.0.1'}，检测 GitHub Releases 最新版本</p>
+            <p className="text-sm text-muted-foreground">当前版本 v{current || '—'}，检测 GitHub Releases 最新版本</p>
           </div>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={check} disabled={loading}>

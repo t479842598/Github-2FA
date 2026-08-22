@@ -67,8 +67,8 @@ export default function DashboardShell({ token, onLogout }) {
     api.accounts().then(async ({ accounts }) => {
       let ghLoggedIn = 0
       try {
-        const results = await Promise.allSettled(accounts.map((a) => api.githubStatus(a.id)))
-        ghLoggedIn = results.filter((r) => r.status === 'fulfilled' && r.value.loggedIn).length
+        const s = await api.githubSummary()
+        ghLoggedIn = s.ghLoggedIn || 0
       } catch { /* ignore */ }
       setStats({ accounts: accounts.length, otpReady: accounts.filter((a) => a.hasSecret).length, ghLoggedIn })
     }).catch(() => {})

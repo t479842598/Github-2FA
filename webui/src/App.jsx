@@ -14,9 +14,13 @@ export default function App() {
       setTokenState(null)
     })
     api.status()
-      .then(() => {
-        // 有 token 直接进入主界面（刷新保持登录）；无 token 才显示登录页
-        setPhase(getToken() ? 'app' : 'login')
+      .then((s) => {
+        if (!getToken()) {
+          setPhase('login')
+          return
+        }
+        // 有 token 进入主界面（刷新保持登录）；仍未改默认密码则先进强制改密页
+        setPhase(s.mustChangePassword ? 'mustChange' : 'app')
       })
       .catch(() => setPhase('login'))
   }, [])

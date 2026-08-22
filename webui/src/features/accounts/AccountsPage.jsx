@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Check, Copy, Download, Eye, EyeOff, Flag, KeyRound, ListPlus, Pencil, Plus, RefreshCw, Search, ShieldCheck, ShieldAlert, QrCode, Tag, Trash2,
+  Check, Copy, Eye, EyeOff, Flag, KeyRound, ListPlus, Pencil, Plus, RefreshCw, Search, ShieldCheck, ShieldAlert, QrCode, Tag, Trash2,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../api.js'
 import OtpQrModal from './OtpQrModal.jsx'
+import ExportModal from '../../components/ExportModal.jsx'
 
 const STEP = 30
 
@@ -58,54 +59,6 @@ function CopyButton({ text, label = '复制', className }) {
     >
       {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
-  )
-}
-
-// 导出预览弹窗：只读 textarea 预览 + 复制 + 下载
-function ExportModal({ title, text, filename, onClose }) {
-  const [copied, setCopied] = useState(false)
-  const download = () => {
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-  const copy = async () => {
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-background/70 backdrop-blur-sm" onClick={onClose}>
-      <div className="card w-full max-w-2xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="text-lg font-semibold">{title}</h3>
-            <p className="text-sm text-muted-foreground">预览导出内容，可复制或下载 .txt 文件</p>
-          </div>
-          <button onClick={onClose} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/70 shrink-0">✕</button>
-        </div>
-        <textarea
-          readOnly
-          value={text}
-          className="input-field w-full h-80 resize-y font-mono text-xs leading-relaxed"
-          onFocus={(e) => e.target.select()}
-        />
-        <div className="flex justify-end gap-2">
-          <button className="btn btn-secondary btn-sm" onClick={copy}>
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-            {copied ? '已复制' : '复制'}
-          </button>
-          <button className="btn btn-primary btn-sm" onClick={download}>
-            <Download className="w-3.5 h-3.5" />
-            下载 .txt
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -192,18 +145,40 @@ function DetailRow({ label, value, recoveryCodes, recoveryUsed, onToggleRecovery
 }
 
 function EditModal({ account, onClose, onSaved }) {
-  const [form, setForm] = useState({
-    username: account?.username || '',
-    email: account?.email || '',
-    password: account?.password || '',
-    setupKey: account?.setupKey || '',
-    otpauth: account?.otpauth || '',
-    recoveryCodes: account?.recoveryCodes?.join('\n') || '',
-    pat: account?.pat || '',
-    remark: account?.remark || '',
-    tags: (account?.tags || []).join(', '),
-  })
+  // form 为 null 表示正在加载详情（编辑已有账号时必先从服务端拉完整凭据，
+  // 避免表单初始化为空导致保存时清空未加载的敏感字段）
+  const [form, setForm] = useState(null)
+  const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    if (!account?.id) {
+      setForm({
+        username: '', email: '', password: '', setupKey: '', otpauth: '',
+        recoveryCodes: '', pat: '', remark: '', tags: '',
+      })
+      return
+    }
+    setLoadError('')
+    api.accountFull(account.id)
+      .then((full) => {
+        if (cancelled) return
+        setForm({
+          username: full.username || '',
+          email: full.email || '',
+          password: full.password || '',
+          setupKey: full.setupKey || '',
+          otpauth: full.otpauth || '',
+          recoveryCodes: (full.recoveryCodes || []).join('\n'),
+          pat: full.pat || '',
+          remark: full.remark || '',
+          tags: (full.tags || []).join(', '),
+        })
+      })
+      .catch((e) => { if (!cancelled) setLoadError(e.message) })
+    return () => { cancelled = true }
+  }, [account?.id])
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
@@ -238,6 +213,14 @@ function EditModal({ account, onClose, onSaved }) {
           <h3 className="text-lg font-semibold">{account ? '编辑账号' : '添加账号'}</h3>
           <button onClick={onClose} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/70">✕</button>
         </div>
+
+        {loadError ? (
+          <div className="px-4 py-3 rounded-lg border border-destructive/25 bg-destructive/10 text-sm text-destructive">
+            加载账号详情失败：{loadError}
+          </div>
+        ) : !form ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">加载凭据中…</div>
+        ) : (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -280,9 +263,10 @@ function EditModal({ account, onClose, onSaved }) {
             <input className={inputCls} value={form.remark} onChange={set('remark')} placeholder="可选备注" />
           </div>
         </div>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <button className="btn btn-secondary btn-sm" onClick={onClose}>取消</button>
-          <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={saving || !form}>
             {saving ? '保存中…' : '保存'}
           </button>
         </div>
@@ -826,12 +810,14 @@ export default function AccountsPage({ showMessage }) {
                             label="恢复码"
                             value={details.recoveryCodes}
                             recoveryUsed={details.recoveryCodesUsed}
-                            onToggleRecovery={(i, used) => {
+                            onToggleRecovery={async (i, used) => {
                               if (!confirm(`确定标记恢复码 ${details.recoveryCodes[i]} 为${used ? '已使用' : '未使用'}吗？`)) return
-                              api.recoveryMark(acc.id, i, used).then(() => {
-                                toggleExpand(acc)
-                                toggleExpand(acc)
-                              }).catch((e) => showMessage('error', e.message))
+                              try {
+                                await api.recoveryMark(acc.id, i, used)
+                                await refreshDetails(acc.id)
+                              } catch (e) {
+                                showMessage('error', e.message)
+                              }
                             }}
                           />
                           <DetailRow label="PAT" value={details.pat} />

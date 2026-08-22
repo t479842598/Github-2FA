@@ -80,6 +80,10 @@ app.use('/api/otps', auth)
 app.use('/api/import', auth)
 app.use('/api/change-password', auth)
 app.use('/api/backup', auth)
+app.use('/api/github', auth)
+app.use('/api/audit', auth)
+app.use('/api/export', auth)
+app.use('/api/tags', auth)
 // 默认密码未改时：禁止导入、添加/编辑/删除账号、GitHub 登录/PAT（只读列表与改密放行）
 app.post('/api/import', requirePasswordChanged)
 app.post('/api/import/keys', requirePasswordChanged)
@@ -126,7 +130,14 @@ app.put('/api/accounts/:id', async (req, res) => {
   for (const k of Object.keys(patch)) {
     if (patch[k] === undefined) delete patch[k]
   }
-  const acc = vault.updateAccount(req.params.id, patch)
+  // 与创建接口同口径：用户名必填、字段长度/数量受限
+  if ('username' in patch && !String(patch.username).trim()) {
+    return fail(res, 400, '账号名不能为空')
+  }
+  if ('username' in patch && String(patch.username).length > 100) {
+    return fail(res, 400, '账号名过长')
+  }
+  const acc = vault.updateAccount(req.params.id, sanitizeAccount(patch))
   if (!acc) return fail(res, 404, '账号不存在')
   vault.log('account_update', acc.username, clientIp(req))
   await vault.save()
@@ -305,8 +316,11 @@ app.post('/api/import', async (req, res) => {
     return fail(res, 400, `解析失败：${e.message}`)
   }
 
+  // 去重索引只解密一次，预览与入库复用；入库时新建账号同步追加
+  const dupIndex = vault.buildDupIndex()
+
   const preview = parsed.map((a) => {
-    const dup = vault.findImportDuplicate(a)
+    const dup = vault.findImportDuplicate(a, dupIndex)
     return {
       username: a.username,
       email: a.email,
@@ -333,7 +347,7 @@ app.post('/api/import', async (req, res) => {
       errors.push({ username: acc.username || '(未命名)', reason: '缺少账号/邮箱' })
       continue
     }
-    const dup = vault.findImportDuplicate(acc)
+    const dup = vault.findImportDuplicate(acc, dupIndex)
     if (dup) {
       // 固定格式导入（被标记账号）：即使账号已存在，也要把标识打上，而不是跳过
       if (acc.flagged && dup.account) {
@@ -344,7 +358,15 @@ app.post('/api/import', async (req, res) => {
       skipped.push({ username: acc.username || acc.email, reason: dup.reason })
       continue
     }
-    vault.createAccount(acc)
+    const rec = vault.createAccount(acc)
+    // 新账号计入去重索引，保持与「实时扫描已建账号」语义一致
+    dupIndex.push({
+      account: rec,
+      username: String(acc.username || '').trim().toLowerCase(),
+      password: String(acc.password || ''),
+      setupKey: String(acc.setupKey || ''),
+      otpauth: String(acc.otpauth || ''),
+    })
     imported += 1
   }
   await vault.save()
@@ -495,6 +517,21 @@ app.get('/api/export', async (req, res) => {
   }
 })
 
+// ---- opencode / freebuff 密钥导出（"账号-密钥"格式，与密钥导入格式一致，可往返） ----
+// ?name=opencode|freebuff（缺省按 opencode）
+app.get('/api/export/keys', async (req, res) => {
+  const name = req.query.name === 'freebuff' ? 'freebuff' : 'opencode'
+  try {
+    const text = vault.exportKeys({ name })
+    const count = text ? text.split('\n').filter(Boolean).length : 0
+    vault.log('key_export', name, clientIp(req), 'ok', `${count} keys`)
+    await vault.save()
+    res.json({ text, name, count })
+  } catch (e) {
+    return fail(res, 500, `导出失败：${e.message}`)
+  }
+})
+
 // ---- 批量删除被标记账号 ----
 app.post('/api/accounts/flagged/delete', async (req, res) => {
   const count = vault.deleteFlaggedAccounts()
@@ -524,12 +561,31 @@ app.get('/api/tags', (req, res) => {
   res.json({ tags: [...tagSet].sort() })
 })
 
+// ---- GitHub 登录态汇总（侧栏统计用，避免前端逐账号请求） ----
+app.get('/api/github/summary', (req, res) => {
+  let ghLoggedIn = 0
+  for (const a of vault.data.accounts) {
+    const session = vault.getGhSession(a.id)
+    if (session && Array.isArray(session.cookies) && session.cookies.length > 0) ghLoggedIn += 1
+  }
+  res.json({ accounts: vault.data.accounts.length, ghLoggedIn })
+})
+
 // ---- 账号健康检查（会话 + PAT 有效性） ----
-app.post('/api/accounts/health', async (req, res) => {
+// 并发受限 + 批次间隔，避免全量串行导致请求长时间挂起；仍保持对 GitHub 的礼貌速率
+async function runWithConcurrency(items, concurrency, fn) {
   const results = []
+  for (let i = 0; i < items.length; i += concurrency) {
+    const chunk = items.slice(i, i + concurrency)
+    results.push(...(await Promise.all(chunk.map(fn))))
+    if (i + concurrency < items.length) await new Promise((r) => setTimeout(r, 600)) // GitHub 限流保护
+  }
+  return results
+}
+
+app.post('/api/accounts/health', async (req, res) => {
   const accounts = vault.data.accounts
-  for (let i = 0; i < accounts.length; i++) {
-    const a = accounts[i]
+  const results = await runWithConcurrency(accounts, 4, async (a) => {
     const item = { id: a.id, username: a.username, session: 'none', pat: 'none', patLogin: null }
     const session = vault.getGhSession(a.id)
     if (session) {
@@ -542,9 +598,8 @@ app.post('/api/accounts/health', async (req, res) => {
       item.pat = r.valid === true ? 'valid' : r.valid === false ? 'invalid' : 'error'
       item.patLogin = r.login || null
     }
-    results.push(item)
-    if (i < accounts.length - 1) await new Promise((r) => setTimeout(r, 600)) // GitHub 限流保护
-  }
+    return item
+  })
   vault.log('health_check', '', clientIp(req), 'ok', `${results.length} accounts`)
   await vault.save()
   res.json({ results })
@@ -557,14 +612,11 @@ app.post('/api/accounts/banned-check', async (req, res) => {
   const { force } = req.body || {}
   const accounts = vault.data.accounts
   const now = Date.now()
-  const results = []
   let checkedCount = 0
-  for (let i = 0; i < accounts.length; i++) {
-    const a = accounts[i]
+  const results = await runWithConcurrency(accounts, 4, async (a) => {
     const cached = !force && a.bannedCheckedAt && now - a.bannedCheckedAt < BANNED_CACHE_MS
     if (cached) {
-      results.push({ id: a.id, username: a.username, banned: a.banned || 'unknown', cached: true })
-      continue
+      return { id: a.id, username: a.username, banned: a.banned || 'unknown', cached: true }
     }
     const full = vault.getFullAccount(a.id)
     const session = vault.getGhSession(a.id)
@@ -575,9 +627,8 @@ app.post('/api/accounts/banned-check', async (req, res) => {
     })
     vault.setBannedStatus(a.id, r.banned)
     checkedCount += 1
-    results.push({ id: a.id, username: a.username, banned: r.banned, via: r.via, cached: false })
-    if (i < accounts.length - 1) await new Promise((r) => setTimeout(r, 600)) // GitHub 限流保护
-  }
+    return { id: a.id, username: a.username, banned: r.banned, via: r.via, cached: false }
+  })
   await vault.save()
   vault.log('banned_check', '', clientIp(req), 'ok', `${checkedCount} checked / ${accounts.length} accounts`)
   res.json({ results, checked: checkedCount, total: accounts.length })

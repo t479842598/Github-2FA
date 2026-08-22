@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
-import { FileUp, Import, KeyRound, Trash2, Upload, Users } from 'lucide-react'
+import { Download, FileUp, Import, KeyRound, Trash2, Upload, Users } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../api.js'
+import ExportModal from '../../components/ExportModal.jsx'
 
 const PLACEHOLDER = `账号: tqH8iLZ7VEV9
 邮箱: user@example.com
@@ -40,6 +41,7 @@ function KeyImportModule({ name, showMessage }) {
   const [previewing, setPreviewing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState(null)
+  const [exportModal, setExportModal] = useState(null) // { title, text, filename }
 
   const doPreview = async () => {
     if (!text.trim()) return
@@ -73,6 +75,23 @@ function KeyImportModule({ name, showMessage }) {
     }
   }
 
+  const doExport = async () => {
+    try {
+      const data = await api.exportKeys(name)
+      if (!data.text) {
+        showMessage('error', `当前没有可导出的 ${name} 密钥（账号授权记录中无 ${name} 记录）`)
+        return
+      }
+      setExportModal({
+        title: `导出 ${name} 密钥（${data.count} 个）`,
+        text: data.text,
+        filename: `${name}-keys-export-${new Date().toISOString().slice(0, 10)}.txt`,
+      })
+    } catch (e) {
+      showMessage('error', e.message)
+    }
+  }
+
   const statusBadge = (s) => {
     if (s === 'new') return <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">新增</span>
     if (s === 'update') return <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">密钥更新（日期标注）</span>
@@ -100,6 +119,14 @@ function KeyImportModule({ name, showMessage }) {
           >
             <Trash2 className="w-3.5 h-3.5" />
             清空
+          </button>
+          <button
+            onClick={doExport}
+            className="btn btn-secondary btn-sm self-start"
+            title={`导出全部 ${name} 密钥（账号-密钥格式，与导入格式一致）`}
+          >
+            <Download className="w-3.5 h-3.5" />
+            导出
           </button>
         </div>
 
@@ -197,6 +224,15 @@ function KeyImportModule({ name, showMessage }) {
             </button>
           </div>
         </div>
+      )}
+
+      {exportModal && (
+        <ExportModal
+          title={exportModal.title}
+          text={exportModal.text}
+          filename={exportModal.filename}
+          onClose={() => setExportModal(null)}
+        />
       )}
     </div>
   )

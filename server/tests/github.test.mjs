@@ -172,6 +172,27 @@ test('2FA 失败（无 secret）', async () => {
   )
 })
 
+test('2FA 动态码错误（登录页 logged_in=no 仍在）→ 拒绝而非假成功', async () => {
+  const TWO_FA_PAGE = `
+  <html><body>
+  <input name="authenticity_token" value="otpAuth456" type="hidden">
+  <input name="timestamp_secret" value="otpTs456" type="hidden">
+  <input name="otp" value="">
+  </body></html>`
+  mockFetch({
+    '/login': async () => ({ status: 200, cookies: ['_gh_sess=init; Path=/', 'logged_in=no; Path=/; Domain=.github.com'], body: LOGIN_PAGE }),
+    '/session': async () => ({ status: 200, cookies: ['_gh_sess=mid; Path=/'], body: TWO_FA_PAGE }),
+    '/sessions/two-factor': async () => ({ status: 200, cookies: [], body: '<html>Incorrect code</html>' }),
+  })
+  const jar = new CookieJar()
+  await assert.rejects(
+    () => loginToGithub({ username: 'u', password: 'p', secret: 'KDI5GIHR6P3HECLE', jar }),
+    (e) => e instanceof GhError && e.code === 'TWO_FA_FAILED'
+  )
+  // 不能留下“已登录”的会话 cookie 错觉
+  assert.equal(jar.get('user_session'), null)
+})
+
 test('密码错误分类', async () => {
   mockFetch({
     '/login': async () => ({ status: 200, cookies: ['_gh_sess=init; Path=/'], body: LOGIN_PAGE }),

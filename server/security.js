@@ -55,9 +55,10 @@ export function securityHeaders(req, res, next) {
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
   // 严格 CSP：仅同源脚本/样式，图片允许 data:
+  // 生产无 WebSocket 依赖，connect-src 仅同源（Vite dev 的 HMR 由 dev server 直出，不受此头影响）
   res.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
   )
   // 禁用缓存（管理后台含敏感数据）
   res.setHeader('Cache-Control', 'no-store')
@@ -88,7 +89,14 @@ export function errorHandler(err, req, res, next) {
   res.status(500).json({ detail: '服务器内部错误' })
 }
 
-// 客户端 IP（考虑反代，但默认取直连地址）
+// 客户端 IP：默认取直连地址；TRUST_PROXY=1（nginx 反代）时信任 X-Forwarded-For 首跳
+// 注意：只有受控反代才应开启，否则攻击者可伪造 XFF 绕过 IP 限速
+const trustProxy = process.env.TRUST_PROXY === '1'
+
 export function clientIp(req) {
+  if (trustProxy) {
+    const xff = req.headers['x-forwarded-for']
+    if (xff) return String(xff).split(',')[0].trim()
+  }
   return req.socket.remoteAddress || 'unknown'
 }
