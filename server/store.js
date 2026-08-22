@@ -199,19 +199,25 @@ export class Vault {
 
   // ---- 账号 CRUD ----
   listAccounts() {
-    return this.data.accounts.map((a) => ({
-      id: a.id,
-      username: a.username,
-      hasSecret: a.hasSecret,
-      hasPat: a.hasPat,
-      hasEmail: a.hasEmail,
-      tags: a.tags || [],
-      flagged: Boolean(a.flagged),
-      banned: a.banned || 'unknown',
-      bannedCheckedAt: a.bannedCheckedAt || null,
-      createdAt: a.createdAt,
-      updatedAt: a.updatedAt,
-    }))
+    return this.data.accounts.map((a) => {
+      const kv = this.decKvRecords(a.kvRecords)
+      return {
+        id: a.id,
+        username: a.username,
+        hasSecret: a.hasSecret,
+        hasPat: a.hasPat,
+        hasEmail: a.hasEmail,
+        // opencode / freebuff 凭证标记（与导出口径一致：title 精确匹配或日期标注记录，且内容非空）
+        hasOpencode: kv.some((r) => r.content && (r.title === 'opencode' || r.title.startsWith('opencode '))),
+        hasFreebuff: kv.some((r) => r.content && (r.title === 'freebuff' || r.title.startsWith('freebuff '))),
+        tags: a.tags || [],
+        flagged: Boolean(a.flagged),
+        banned: a.banned || 'unknown',
+        bannedCheckedAt: a.bannedCheckedAt || null,
+        createdAt: a.createdAt,
+        updatedAt: a.updatedAt,
+      }
+    })
   }
 
   getAccount(id) {

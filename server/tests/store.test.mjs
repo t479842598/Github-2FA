@@ -382,6 +382,21 @@ test('exportKeys：按类型导出「账号-密钥」格式（含日期标注记
   await empty.setupPassword('pw123456')
   empty.setDataKey('pw123456')
   assert.equal(empty.exportKeys({ name: 'opencode' }), '')
+
+  // 列表暴露凭证标记（与导出口径一致：日期标注记录算，空内容不算）
+  const list = vault.listAccounts()
+  const lAlice = list.find((x) => x.username === 'alice')
+  const lBob = list.find((x) => x.username === 'bob')
+  const lCarol = list.find((x) => x.username === 'carol')
+  const lNokey = list.find((x) => x.username === 'nokey')
+  assert.equal(lAlice.hasOpencode, true)
+  assert.equal(lAlice.hasFreebuff, true)
+  assert.equal(lBob.hasOpencode, false)
+  assert.equal(lBob.hasFreebuff, true) // 日期标注记录也算
+  assert.equal(lCarol.hasOpencode, false) // 空内容不算凭证
+  assert.equal(lCarol.hasFreebuff, false)
+  assert.equal(lNokey.hasOpencode, false)
+  assert.equal(lNokey.hasFreebuff, false)
   rmSync(dir, { recursive: true, force: true })
 })
 

@@ -378,6 +378,7 @@ export default function AccountsPage({ showMessage }) {
   const [allTags, setAllTags] = useState([])
   const [tagFilter, setTagFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('') // '' | normal | banned
+  const [credFilter, setCredFilter] = useState('') // '' | opencode | freebuff | both | none
   const [bannedChecking, setBannedChecking] = useState(false)
   const [exportModal, setExportModal] = useState(null) // { title, text, filename }
   const [confirmFlaggedDelete, setConfirmFlaggedDelete] = useState(false)
@@ -503,6 +504,10 @@ export default function AccountsPage({ showMessage }) {
       if (tagFilter && !(a.tags || []).includes(tagFilter)) return false
       if (statusFilter === 'flagged') return a.flagged === true
       if (statusFilter && a.banned !== statusFilter) return false
+      if (credFilter === 'opencode' && !a.hasOpencode) return false
+      if (credFilter === 'freebuff' && !a.hasFreebuff) return false
+      if (credFilter === 'both' && !(a.hasOpencode && a.hasFreebuff)) return false
+      if (credFilter === 'none' && (a.hasOpencode || a.hasFreebuff)) return false
       return true
     })
     // 封号排最后：normal/unknown 在前（保持原序），banned 在末尾
@@ -585,6 +590,18 @@ export default function AccountsPage({ showMessage }) {
               <option value="banned">被封</option>
               <option value="flagged">被标记</option>
             </select>
+            <select
+              value={credFilter}
+              onChange={(e) => setCredFilter(e.target.value)}
+              className="flex-1 sm:flex-none px-2.5 py-2 text-xs bg-secondary border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-ring"
+              title="按 opencode / freebuff 凭证筛选"
+            >
+              <option value="">全部凭证</option>
+              <option value="opencode">有 opencode</option>
+              <option value="freebuff">有 freebuff</option>
+              <option value="both">两者都有</option>
+              <option value="none">两者都没有</option>
+            </select>
             <button
               onClick={forceBannedCheck}
               disabled={bannedChecking || accounts.length === 0}
@@ -662,6 +679,12 @@ export default function AccountsPage({ showMessage }) {
                                 <Flag className="w-2.5 h-2.5" /> 标记
                               </span>
                             )}
+                            {acc.hasOpencode && (
+                              <span className="inline-flex items-center gap-0.5 font-mono bg-sky-500/10 text-sky-500 px-1.5 py-0.5 rounded text-[10px]" title="已有 opencode 凭证">opencode</span>
+                            )}
+                            {acc.hasFreebuff && (
+                              <span className="inline-flex items-center gap-0.5 font-mono bg-teal-500/10 text-teal-500 px-1.5 py-0.5 rounded text-[10px]" title="已有 freebuff 凭证">freebuff</span>
+                            )}
                             {(acc.tags || []).map((t) => (
                               <span key={t} className="inline-flex items-center gap-0.5 font-mono bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded text-[10px]">
                                 <Tag className="w-2.5 h-2.5" /> {t}
@@ -731,6 +754,12 @@ export default function AccountsPage({ showMessage }) {
                             <span className="inline-flex items-center gap-0.5 font-mono bg-purple-500/10 text-purple-500 px-1.5 py-0.5 rounded text-[10px]" title="被标记账号（固定格式导入）">
                               <Flag className="w-2.5 h-2.5" /> 标记
                             </span>
+                          )}
+                          {acc.hasOpencode && (
+                            <span className="inline-flex items-center gap-0.5 font-mono bg-sky-500/10 text-sky-500 px-1.5 py-0.5 rounded text-[10px]" title="已有 opencode 凭证">opencode</span>
+                          )}
+                          {acc.hasFreebuff && (
+                            <span className="inline-flex items-center gap-0.5 font-mono bg-teal-500/10 text-teal-500 px-1.5 py-0.5 rounded text-[10px]" title="已有 freebuff 凭证">freebuff</span>
                           )}
                           {(acc.tags || []).map((t) => (
                             <span key={t} className="inline-flex items-center gap-0.5 font-mono bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded text-[10px]">

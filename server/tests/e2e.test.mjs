@@ -155,6 +155,9 @@ try {
   check('密钥导出接口正常', r.status === 200, `status=${r.status}`)
   r = await req('/api/audit')
   check('密钥导出审计留痕', r.status === 200 && r.data.logs.some((l) => l.action === 'key_export'), JSON.stringify(r.data.logs.slice(0, 2)))
+  r = await req('/api/accounts')
+  const keyAcc = r.data.accounts.find((a) => a.username === 'keyuser')
+  check('列表暴露 opencode/freebuff 凭证标记', r.status === 200 && keyAcc.hasOpencode === true && keyAcc.hasFreebuff === true, JSON.stringify(keyAcc))
 } catch (e) {
   console.error('FATAL:', e.message)
   console.error(log.slice(-2000))
